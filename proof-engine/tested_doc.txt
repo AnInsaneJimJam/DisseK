@@ -1,0 +1,5 @@
+// actual_doc.txt
+This is line 1 of the incredibly important file.
+This is line 2 containing vital secrets.
+This is line 3.
+This is line 4, which we want Bob to see.

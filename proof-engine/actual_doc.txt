@@ -1,0 +1,11 @@
+// actual_doc.txt
+This is line 1 of the incredibly important file.
+This is line 2 containing vital secrets.
+This is line 3.
+This is line 4, which we want Bob to see.
+This is line 5, the end of the public section.
+This is line 6 - TOP SECRET.
+This is line 7 - CLASSIFIED.
+This is line 8 - DO NOT SHARE.
+This is line 9 - FOR OWNER EYES ONLY.
+This is line 10 - END OF DOCUMENT.
