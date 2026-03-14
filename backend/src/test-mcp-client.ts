@@ -33,10 +33,10 @@ async function main() {
   }
 
   await client.disconnect();
-  console.log("\n✅ MCP client test passed!");
+  console.log("\nMCP client test passed!");
 }
 
 main().catch((err) => {
-  console.error("❌ Error:", err);
+  console.error("Error:", err);
   process.exit(1);
 });

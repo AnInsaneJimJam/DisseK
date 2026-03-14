@@ -24,7 +24,7 @@ function getFileverseClient(): FileverseClient {
  * 1. Fetches the original doc from Fileverse
  * 2. Generates a Merkle proof for the selected line range
  * 3. Creates a new partial doc on Fileverse with the disclosed content
- * 4. Returns the new doc link + proof package
+ * 4. Returns the new doc link + proof package (proof is NOT in the dDoc, only in API response)
  */
 app.post("/disclose", async (req, res) => {
   try {
@@ -58,7 +58,7 @@ app.post("/disclose", async (req, res) => {
       endLine
     );
 
-    // 3. Build the partial document content (disclosed lines + proof metadata)
+    // 3. Build the partial document content (clean disclosed lines only — no proof)
     const partialContent = [
       `# Selective Disclosure: ${originalDoc.title}`,
       "",
@@ -67,17 +67,7 @@ app.post("/disclose", async (req, res) => {
       "",
       "---",
       "",
-      "## Disclosed Content",
-      "",
       ...disclosedLines,
-      "",
-      "---",
-      "",
-      "## Proof Package",
-      "",
-      "```json",
-      JSON.stringify(proofPackage, null, 2),
-      "```",
     ].join("\n");
 
     // 4. Create the new partial document on Fileverse
@@ -138,17 +128,7 @@ app.post("/disclose-direct", async (req, res) => {
       "",
       "---",
       "",
-      "## Disclosed Content",
-      "",
       ...disclosedLines,
-      "",
-      "---",
-      "",
-      "## Proof Package",
-      "",
-      "```json",
-      JSON.stringify(proofPackage, null, 2),
-      "```",
     ].join("\n");
 
     res.json({

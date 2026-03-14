@@ -43,7 +43,7 @@ console.log(`Proof size: ${proofPackage.multi_proof.length / 2} bytes`);
 // --- STEP 2: Bob verifies the disclosure ---
 console.log("\n--- Step 2: Bob Verifies the Disclosure ---");
 const isValid = verifyDisclosure(disclosedLines, proofPackage);
-console.log(`Verification result: ${isValid ? "✅ VALID" : "❌ INVALID"}`);
+console.log(`Verification result: ${isValid ? " VALID" : " INVALID"}`);
 
 // --- STEP 3: Tamper test ---
 console.log("\n--- Step 3: Tamper Detection Test ---");
@@ -51,7 +51,7 @@ const tamperedLines = [...disclosedLines];
 tamperedLines[0] = "TAMPERED LINE";
 const isTamperedValid = verifyDisclosure(tamperedLines, proofPackage);
 console.log(
-  `Tampered verification: ${isTamperedValid ? "❌ SHOULD HAVE FAILED" : "✅ Correctly rejected tampered data"}`
+  `Tampered verification: ${isTamperedValid ? " SHOULD HAVE FAILED" : " Correctly rejected tampered data"}`
 );
 
 // --- STEP 4: Wrong range test ---
@@ -59,7 +59,7 @@ console.log("\n--- Step 4: Wrong Range Test ---");
 const shiftedPackage = { ...proofPackage, range_start: 1 };
 const isShiftedValid = verifyDisclosure(disclosedLines, shiftedPackage);
 console.log(
-  `Wrong-range verification: ${isShiftedValid ? "❌ SHOULD HAVE FAILED" : "✅ Correctly rejected wrong range"}`
+  `Wrong-range verification: ${isShiftedValid ? " SHOULD HAVE FAILED" : " Correctly rejected wrong range"}`
 );
 
 console.log("\n=== All tests passed! ===");
