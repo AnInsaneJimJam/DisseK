@@ -2,6 +2,9 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import { v4 as uuidv4 } from "uuid";
+import { paymentMiddleware, x402ResourceServer } from "@x402/express";
+import { ExactEvmScheme } from "@x402/evm/exact/server";
+import { HTTPFacilitatorClient } from "@x402/core/server";
 import { store } from "./store.js";
 import type {
   Host,
@@ -15,6 +18,41 @@ app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.MARKETPLACE_PORT || 3002;
+
+// --- x402 Payment Configuration ---
+const evmPayTo = (process.env.EVM_PAY_TO_ADDRESS || "0x0000000000000000000000000000000000000000") as `0x${string}`;
+const facilitatorUrl = process.env.X402_FACILITATOR_URL || "https://x402.org/facilitator";
+const x402Network = (process.env.X402_NETWORK || "eip155:84532") as `${string}:${string}`;
+const purchasePrice = process.env.PURCHASE_PRICE || "$0.01";
+
+const facilitatorClient = new HTTPFacilitatorClient({ url: facilitatorUrl });
+const resourceServer = new x402ResourceServer(facilitatorClient)
+  .register("eip155:84532", new ExactEvmScheme())
+  .register("eip155:8453", new ExactEvmScheme());
+
+// x402 paywall for the purchase endpoint.
+// We use a sub-Router because x402's paymentMiddleware uses exact string
+// matching and cannot handle Express-style parameterised routes (:id).
+// By mounting the Router at /api/documents/:id/purchase, Express strips
+// the prefix and x402 sees "POST /" which it can match.
+const purchaseRouter = express.Router({ mergeParams: true });
+purchaseRouter.use(
+  paymentMiddleware(
+    {
+      "POST /": {
+        accepts: {
+          scheme: "exact",
+          price: purchasePrice,
+          network: x402Network,
+          payTo: evmPayTo,
+        },
+        description: "Purchase selective disclosure of document lines",
+        mimeType: "application/json",
+      },
+    },
+    resourceServer,
+  ),
+);
 
 // ─── Host Registration ───────────────────────────────────────────────
 
@@ -206,7 +244,7 @@ app.get("/api/documents/:id", async (req, res) => {
 // ─── Purchase Flow ───────────────────────────────────────────────────
 
 /**
- * POST /api/documents/:id/purchase
+ * POST /api/documents/:id/purchase  [PAYWALLED via x402]
  * Body: { sectionId?, lineStart?, lineEnd?, buyerAddress }
  *
  * Two modes:
@@ -216,7 +254,7 @@ app.get("/api/documents/:id", async (req, res) => {
  * The marketplace NEVER sees the original document.
  * It only relays the disclosure request to the host.
  */
-app.post("/api/documents/:id/purchase", async (req, res) => {
+purchaseRouter.post("/", async (req: express.Request<{ id: string }>, res) => {
   try {
     const { sectionId, lineStart: reqLineStart, lineEnd: reqLineEnd, buyerAddress } = req.body;
     const doc = await store.getDocument(req.params.id);
@@ -358,6 +396,9 @@ app.post("/api/documents/:id/purchase", async (req, res) => {
   }
 });
 
+// Mount the x402-paywalled purchase router
+app.use("/api/documents/:id/purchase", purchaseRouter);
+
 /**
  * GET /api/purchases/:id
  */
@@ -457,13 +498,14 @@ app.get("/api/health", async (_req, res) => {
 
 app.listen(PORT, () => {
   console.log(`DisseK Marketplace running on http://localhost:${PORT}`);
+  console.log(`x402 paywall: ${purchasePrice} on ${x402Network} → ${evmPayTo}`);
   console.log("Endpoints:");
-  console.log("  POST /api/hosts              - Register a host");
-  console.log("  GET  /api/hosts              - List hosts");
-  console.log("  POST /api/documents          - List a document");
-  console.log("  GET  /api/documents          - Browse documents");
-  console.log("  GET  /api/documents/:id      - Document detail");
-  console.log("  POST /api/documents/:id/purchase - Purchase a section");
-  console.log("  POST /api/verify             - Verify a proof");
-  console.log("  GET  /api/health             - Health check");
+  console.log("  POST /api/hosts                   - Register a host (FREE)");
+  console.log("  GET  /api/hosts                   - List hosts (FREE)");
+  console.log("  POST /api/documents               - List a document (FREE)");
+  console.log("  GET  /api/documents               - Browse documents (FREE)");
+  console.log("  GET  /api/documents/:id           - Document detail (FREE)");
+  console.log("  POST /api/documents/:id/purchase  - Purchase section (PAID via x402)");
+  console.log("  POST /api/verify                  - Verify a proof (FREE)");
+  console.log("  GET  /api/health                  - Health check (FREE)");
 });

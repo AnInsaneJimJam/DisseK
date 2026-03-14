@@ -1,6 +1,9 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import { paymentMiddleware, x402ResourceServer } from "@x402/express";
+import { ExactEvmScheme } from "@x402/evm/exact/server";
+import { HTTPFacilitatorClient } from "@x402/core/server";
 import { FileverseClient } from "./fileverse-client.js";
 import { generateDisclosure, verifyDisclosure, buildTree } from "./proof-service.js";
 
@@ -9,6 +12,37 @@ app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 3001;
+
+// --- x402 Payment Configuration ---
+const evmPayTo = (process.env.EVM_PAY_TO_ADDRESS || "0x0000000000000000000000000000000000000000") as `0x${string}`;
+const facilitatorUrl = process.env.X402_FACILITATOR_URL || "https://x402.org/facilitator";
+const x402Network = (process.env.X402_NETWORK || "eip155:84532") as `${string}:${string}`;
+const disclosurePrice = process.env.DISCLOSURE_PRICE || "$0.01";
+
+const facilitatorClient = new HTTPFacilitatorClient({ url: facilitatorUrl });
+const resourceServer = new x402ResourceServer(facilitatorClient)
+  .register("eip155:84532", new ExactEvmScheme())
+  .register("eip155:8453", new ExactEvmScheme());
+
+// x402 paywall: only POST /disclose requires payment.
+// All other endpoints (browsing, verification, health) remain free.
+app.use(
+  paymentMiddleware(
+    {
+      "POST /disclose": {
+        accepts: {
+          scheme: "exact",
+          price: disclosurePrice,
+          network: x402Network,
+          payTo: evmPayTo,
+        },
+        description: "Selective disclosure of document lines with Merkle proof",
+        mimeType: "application/json",
+      },
+    },
+    resourceServer,
+  ),
+);
 
 // Shared singleton — stays connected across requests
 let _fvClient: FileverseClient | null = null;
@@ -288,9 +322,14 @@ app.get("/health", (_req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`DisseK backend running on http://localhost:${PORT}`);
+  console.log(`DisseK Host Backend running on http://localhost:${PORT}`);
+  console.log(`x402 paywall: ${disclosurePrice} on ${x402Network} → ${evmPayTo}`);
   console.log("Endpoints:");
-  console.log("  POST /disclose  - Generate selective disclosure");
-  console.log("  POST /verify    - Verify a disclosure proof");
-  console.log("  GET  /health    - Health check");
+  console.log("  POST /disclose           - Selective disclosure (PAID via x402)");
+  console.log("  POST /disclose-direct    - Direct disclosure (FREE, no Fileverse)");
+  console.log("  POST /verify             - Verify a disclosure proof (FREE)");
+  console.log("  POST /build-tree         - Build Merkle tree for a doc (FREE)");
+  console.log("  GET  /documents          - List Fileverse documents (FREE)");
+  console.log("  GET  /documents/:ddocId  - Get document with content (FREE)");
+  console.log("  GET  /health             - Health check (FREE)");
 });
