@@ -291,3 +291,29 @@
     position: static;
   }
 }
+
+/* Identity panel */
+.identity-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.identity-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.purchase-mode-toggle {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.namespace-input {
+  width: 100%;
+}

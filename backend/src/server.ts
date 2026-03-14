@@ -3,6 +3,9 @@ import express from "express";
 import cors from "cors";
 import { FileverseClient } from "./fileverse-client.js";
 import { generateDisclosure, verifyDisclosure, buildTree } from "./proof-service.js";
+import { verifyAgentENS, encodeErc7930, buildAgentTextRecordKey } from "./ens-verifier.js";
+import { resolveIdentity, forwardResolve, reverseResolve } from "./ens-resolver.js";
+import { createGrant, checkDocumentAccess, getAllGrantsForDocument } from "./access-store.js";
 
 const app = express();
 app.use(cors());
@@ -287,10 +290,167 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", engine: "DisseK Selective Disclosure Backend" });
 });
 
+// ─── ENS / ENSIP-25 / Access Control Endpoints ─────────────────────
+
+/**
+ * POST /verify-agent
+ * Body: { ensName, registryAddress, registryChainId, agentId, ensChainId? }
+ *
+ * Verifies that an ENS name has an ENSIP-25 text record attesting an agent.
+ */
+app.post("/verify-agent", async (req, res) => {
+  try {
+    const { ensName, registryAddress, registryChainId, agentId, ensChainId } = req.body;
+
+    if (!ensName || !registryAddress || registryChainId == null || !agentId) {
+      res.status(400).json({
+        error: "Required: ensName, registryAddress, registryChainId, agentId",
+      });
+      return;
+    }
+
+    const result = await verifyAgentENS({
+      ensName,
+      registryAddress,
+      registryChainId: Number(registryChainId),
+      agentId: String(agentId),
+      ensChainId: ensChainId ? Number(ensChainId) : 1,
+    });
+
+    // Include encoding helpers in response for debugging
+    const erc7930 = encodeErc7930(registryAddress, Number(registryChainId));
+    const textRecordKey = buildAgentTextRecordKey(
+      registryAddress,
+      Number(registryChainId),
+      String(agentId)
+    );
+
+    res.json({ ...result, erc7930Encoding: erc7930, textRecordKey });
+  } catch (err: any) {
+    console.error("verify-agent error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /resolve-ens
+ * Body: { address, chainId? }
+ *
+ * Resolves wallet address → ENS identity (reverse + forward verification).
+ */
+app.post("/resolve-ens", async (req, res) => {
+  try {
+    const { address, chainId } = req.body;
+    if (!address) {
+      res.status(400).json({ error: "address is required" });
+      return;
+    }
+
+    const identity = await resolveIdentity(address, chainId ? Number(chainId) : 1);
+    res.json(identity);
+  } catch (err: any) {
+    console.error("resolve-ens error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /grant-access
+ * Body: { documentId, sectionIndex, grantType, grantedTo, purchasedBy, requireEnsip25? }
+ *
+ * Creates an access grant (individual or namespace).
+ */
+app.post("/grant-access", async (req, res) => {
+  try {
+    const { documentId, sectionIndex, grantType, grantedTo, purchasedBy, requireEnsip25 } =
+      req.body;
+
+    if (!documentId || sectionIndex == null || !grantType || !grantedTo || !purchasedBy) {
+      res.status(400).json({
+        error: "Required: documentId, sectionIndex, grantType, grantedTo, purchasedBy",
+      });
+      return;
+    }
+
+    const grant = createGrant({
+      documentId,
+      sectionIndex: Number(sectionIndex),
+      grantType,
+      grantedTo,
+      purchasedBy,
+      requireEnsip25: requireEnsip25 ?? false,
+    });
+
+    console.log(
+      `[grant] ${grantType} grant created: ${grantedTo} → doc:${documentId} section:${sectionIndex}`
+    );
+    res.json(grant);
+  } catch (err: any) {
+    console.error("grant-access error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /check-access
+ * Body: { address, ensName, documentId, sectionIndex, registryAddress?, registryChainId?, ensChainId? }
+ *
+ * Checks if a wallet/ENS name has access to a document section.
+ */
+app.post("/check-access", async (req, res) => {
+  try {
+    const {
+      address,
+      ensName,
+      documentId,
+      sectionIndex,
+      registryAddress,
+      registryChainId,
+      ensChainId,
+    } = req.body;
+
+    if (!ensName || !documentId || sectionIndex == null) {
+      res.status(400).json({
+        error: "Required: ensName, documentId, sectionIndex",
+      });
+      return;
+    }
+
+    const result = await checkDocumentAccess({
+      address: address || "",
+      documentId,
+      sectionIndex: Number(sectionIndex),
+      ensName,
+      registryAddress,
+      registryChainId: registryChainId ? Number(registryChainId) : undefined,
+      ensChainId: ensChainId ? Number(ensChainId) : undefined,
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    console.error("check-access error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /grants/:docId
+ * Returns all access grants for a document.
+ */
+app.get("/grants/:docId", (req, res) => {
+  const grants = getAllGrantsForDocument(req.params.docId);
+  res.json({ documentId: req.params.docId, grants });
+});
+
 app.listen(PORT, () => {
   console.log(`DisseK backend running on http://localhost:${PORT}`);
   console.log("Endpoints:");
-  console.log("  POST /disclose  - Generate selective disclosure");
-  console.log("  POST /verify    - Verify a disclosure proof");
-  console.log("  GET  /health    - Health check");
+  console.log("  POST /disclose       - Generate selective disclosure");
+  console.log("  POST /verify         - Verify a disclosure proof");
+  console.log("  POST /verify-agent   - ENSIP-25 agent verification");
+  console.log("  POST /resolve-ens    - ENS identity resolution");
+  console.log("  POST /grant-access   - Create access grant");
+  console.log("  POST /check-access   - Check document access");
+  console.log("  GET  /grants/:docId  - List grants for document");
+  console.log("  GET  /health         - Health check");
 });

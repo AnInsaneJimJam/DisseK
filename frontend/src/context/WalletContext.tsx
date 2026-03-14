@@ -1,6 +1,22 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
-import { BrowserProvider, type Signer } from 'ethers';
-import { SiweMessage } from 'siwe';
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  type ReactNode,
+} from "react";
+import { BrowserProvider, type Signer } from "ethers";
+import { SiweMessage } from "siwe";
+
+const BACKEND_URL = "http://localhost:3001";
+
+interface ENSIdentity {
+  address: string;
+  ensName: string | null;
+  forwardVerified: boolean;
+  identityType: "individual" | "org-agent" | "unknown";
+  parentName: string | null;
+}
 
 interface WalletState {
   address: string | null;
@@ -8,6 +24,8 @@ interface WalletState {
   signer: Signer | null;
   isConnecting: boolean;
   isConnected: boolean;
+  identity: ENSIdentity | null;
+  identityLoading: boolean;
   connect: () => Promise<void>;
   disconnect: () => void;
 }
@@ -18,6 +36,8 @@ const WalletContext = createContext<WalletState>({
   signer: null,
   isConnecting: false,
   isConnected: false,
+  identity: null,
+  identityLoading: false,
   connect: async () => {},
   disconnect: () => {},
 });
@@ -27,10 +47,32 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [ensName, setEnsName] = useState<string | null>(null);
   const [signer, setSigner] = useState<Signer | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [identity, setIdentity] = useState<ENSIdentity | null>(null);
+  const [identityLoading, setIdentityLoading] = useState(false);
+
+  const resolveENSIdentity = useCallback(async (addr: string) => {
+    setIdentityLoading(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/resolve-ens`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: addr }),
+      });
+      if (res.ok) {
+        const data: ENSIdentity = await res.json();
+        setIdentity(data);
+        if (data.ensName) setEnsName(data.ensName);
+      }
+    } catch (err) {
+      console.warn("ENS identity resolution failed:", err);
+    } finally {
+      setIdentityLoading(false);
+    }
+  }, []);
 
   const connect = useCallback(async () => {
     if (!(window as any).ethereum) {
-      alert('Please install MetaMask or another Ethereum wallet.');
+      alert("Please install MetaMask or another Ethereum wallet.");
       return;
     }
 
@@ -51,9 +93,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const siweMessage = new SiweMessage({
         domain: window.location.host,
         address: addr,
-        statement: 'Sign in to DisseK Marketplace',
+        statement: "Sign in to DisseK Marketplace",
         uri: window.location.origin,
-        version: '1',
+        version: "1",
         chainId,
         nonce: Math.random().toString(36).slice(2),
         issuedAt: new Date().toISOString(),
@@ -62,32 +104,35 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const messageStr = siweMessage.prepareMessage();
       await s.signMessage(messageStr);
 
-      // Try ENS reverse lookup — never throw, just default to null
+      // Try ENS reverse lookup locally first
       let ens: string | null = null;
       try {
         ens = await provider.lookupAddress(addr);
       } catch {
-        // ENS lookup not available on this network — that's fine
+        // ENS lookup not available on this network
       }
 
       setAddress(addr);
       setEnsName(ens);
       setSigner(s);
+
+      // Also resolve full identity via backend (includes forward verification + identity type)
+      resolveENSIdentity(addr);
     } catch (err: any) {
-      console.error('Wallet connection failed:', err);
-      // 4001 = user rejected, ACTION_REJECTED = ethers v6 equivalent
-      if (err.code !== 4001 && err.code !== 'ACTION_REJECTED') {
+      console.error("Wallet connection failed:", err);
+      if (err.code !== 4001 && err.code !== "ACTION_REJECTED") {
         alert(`Connection failed: ${err.message}`);
       }
     } finally {
       setIsConnecting(false);
     }
-  }, []);
+  }, [resolveENSIdentity]);
 
   const disconnect = useCallback(() => {
     setAddress(null);
     setEnsName(null);
     setSigner(null);
+    setIdentity(null);
   }, []);
 
   return (
@@ -98,6 +143,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         signer,
         isConnecting,
         isConnected: !!address,
+        identity,
+        identityLoading,
         connect,
         disconnect,
       }}

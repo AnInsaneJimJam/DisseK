@@ -19,7 +19,7 @@ interface SectionPurchaseData {
 
 export default function DocumentDetail() {
   const { id } = useParams<{ id: string }>();
-  const { address: walletAddress, isConnected: walletConnected } = useWallet();
+  const { address: walletAddress, isConnected: walletConnected, ensName, identity } = useWallet();
   const [doc, setDoc] = useState<DocumentListing | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +34,10 @@ export default function DocumentDetail() {
   const [customLineStart, setCustomLineStart] = useState('');
   const [customLineEnd, setCustomLineEnd] = useState('');
   const [isPurchasingCustom, setIsPurchasingCustom] = useState(false);
+
+  // ENS purchase mode
+  const [purchaseMode, setPurchaseMode] = useState<'individual' | 'organization'>('individual');
+  const [namespace, setNamespace] = useState('');
 
   useEffect(() => {
     if (!id) return;
@@ -70,6 +74,31 @@ export default function DocumentDetail() {
 
   const hostName = doc.host?.name || 'Unknown Host';
 
+  const BACKEND_URL = "http://localhost:3001";
+
+  const grantAccess = async (sectionIndex: number) => {
+    if (!walletAddress) return;
+    const grantedTo = purchaseMode === 'organization' && namespace
+      ? namespace
+      : (ensName || identity?.ensName || walletAddress);
+    try {
+      await fetch(`${BACKEND_URL}/grant-access`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentId: doc.id,
+          sectionIndex,
+          grantType: purchaseMode === 'organization' ? 'namespace' : 'individual',
+          grantedTo,
+          purchasedBy: walletAddress,
+          requireEnsip25: purchaseMode === 'organization',
+        }),
+      });
+    } catch (err) {
+      console.warn('Grant access failed:', err);
+    }
+  };
+
   const handlePurchase = async (sectionId: string) => {
     setPurchasingSection(sectionId);
     try {
@@ -88,6 +117,9 @@ export default function DocumentDetail() {
           });
           return next;
         });
+        // Create access grant
+        const sectionIdx = doc.sections.findIndex(s => s.id === sectionId);
+        if (sectionIdx >= 0) grantAccess(sectionIdx);
       }
     } catch (err: any) {
       alert(`Purchase failed: ${err.message}`);
@@ -228,6 +260,56 @@ export default function DocumentDetail() {
                   <line x1="12" y1="16" x2="12.01" y2="16"/>
                 </svg>
                 <span className="text-xs">Connect your wallet to purchase with your Ethereum address.</span>
+              </div>
+            )}
+
+            {/* Identity & Purchase Mode Panel */}
+            {walletConnected && (
+              <div className="identity-panel card fade-in" id="identity-panel">
+                <div className="identity-info">
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Purchasing as</span>
+                  <span className="text-sm" style={{ fontWeight: 600 }}>
+                    {ensName || identity?.ensName || `${walletAddress?.slice(0, 6)}...${walletAddress?.slice(-4)}`}
+                  </span>
+                  {identity?.identityType === 'org-agent' && identity.parentName && (
+                    <span className="identity-badge">🏢 Agent under {identity.parentName}</span>
+                  )}
+                  {identity?.forwardVerified && (
+                    <span className="identity-badge" style={{ background: 'rgba(16,185,129,0.15)', color: 'var(--success)', borderColor: 'rgba(16,185,129,0.3)' }}>✓ Verified</span>
+                  )}
+                </div>
+                <div className="purchase-mode-toggle">
+                  <button
+                    className={`btn btn-sm ${purchaseMode === 'individual' ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setPurchaseMode('individual')}
+                  >
+                    Individual
+                  </button>
+                  <button
+                    className={`btn btn-sm ${purchaseMode === 'organization' ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setPurchaseMode('organization')}
+                  >
+                    Organization
+                  </button>
+                </div>
+                {purchaseMode === 'organization' && (
+                  <div className="namespace-input" style={{ marginTop: '0.5rem' }}>
+                    <label className="text-xs">Namespace (parent ENS)</label>
+                    <input
+                      className="input"
+                      placeholder="e.g. research.google.eth"
+                      value={namespace}
+                      onChange={e => setNamespace(e.target.value)}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+            {!walletConnected && (
+              <div className="identity-panel card fade-in" id="connect-prompt" style={{ textAlign: 'center', padding: '1.5rem' }}>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                  Connect your wallet to purchase sections and build your ENS identity.
+                </p>
               </div>
             )}
 

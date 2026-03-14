@@ -2,6 +2,129 @@ import { useState } from 'react';
 import { verifyProof } from '../api/marketplace';
 import './Verify.css';
 
+const BACKEND_URL = "http://localhost:3001";
+
+interface AgentVerificationResult {
+  verified: boolean;
+  ensName: string;
+  textRecordKey: string;
+  textRecordValue: string | null;
+  resolverAddress: string | null;
+  erc7930Encoding?: string;
+  error?: string;
+}
+
+function AgentVerifier() {
+  const [ensName, setEnsName] = useState('');
+  const [registryAddress, setRegistryAddress] = useState('0x8004A818BFB912233c491871b3d84c89A494BD9e');
+  const [registryChainId, setRegistryChainId] = useState('84532');
+  const [agentId, setAgentId] = useState('1');
+  const [ensChainId, setEnsChainId] = useState('1');
+  const [result, setResult] = useState<AgentVerificationResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleVerify = async () => {
+    setLoading(true);
+    setError('');
+    setResult(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/verify-agent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ensName,
+          registryAddress,
+          registryChainId: Number(registryChainId),
+          agentId,
+          ensChainId: Number(ensChainId),
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setResult(await res.json());
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const ensChainOptions = [
+    { id: '1', label: 'Mainnet' },
+    { id: '11155111', label: 'Sepolia' },
+    { id: '84532', label: 'Base Sepolia' },
+  ];
+
+  return (
+    <div className="agent-verifier card fade-in stagger-3" id="agent-verifier">
+      <h3 className="heading-sm">🔍 ENSIP-25 Agent Verification</h3>
+      <p className="text-sm" style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>
+        Verify that an ENS name has an agent attestation text record (ENSIP-25 / ERC-8004).
+      </p>
+
+      <div className="agent-verifier-fields">
+        <div className="publish-field">
+          <label className="text-xs">ENS Name</label>
+          <input className="input" placeholder="e.g. myagent.eth" value={ensName} onChange={e => setEnsName(e.target.value)} />
+        </div>
+        <div className="publish-field">
+          <label className="text-xs">Registry Address</label>
+          <input className="input text-mono" value={registryAddress} onChange={e => setRegistryAddress(e.target.value)} />
+        </div>
+        <div className="agent-verifier-row">
+          <div className="publish-field">
+            <label className="text-xs">Registry Chain ID</label>
+            <input className="input" value={registryChainId} onChange={e => setRegistryChainId(e.target.value)} />
+          </div>
+          <div className="publish-field">
+            <label className="text-xs">Agent ID</label>
+            <input className="input" value={agentId} onChange={e => setAgentId(e.target.value)} />
+          </div>
+        </div>
+        <div className="publish-field">
+          <label className="text-xs">ENS Resolution Network</label>
+          <div className="ens-chain-toggle">
+            {ensChainOptions.map(opt => (
+              <button
+                key={opt.id}
+                className={`btn btn-sm ${ensChainId === opt.id ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setEnsChainId(opt.id)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <button
+        className={`btn btn-primary ${loading ? 'btn-loading' : ''}`}
+        onClick={handleVerify}
+        disabled={!ensName || loading}
+        style={{ marginTop: '1rem' }}
+      >
+        {loading ? <><span className="spinner" /> Verifying...</> : 'Verify Agent'}
+      </button>
+
+      {error && <div className="verify-result invalid" style={{ marginTop: '1rem' }}><p className="text-sm">{error}</p></div>}
+
+      {result && (
+        <div className={`verify-result ${result.verified ? 'valid' : 'invalid'}`} style={{ marginTop: '1rem' }}>
+          <h4 className="heading-sm" style={{ color: result.verified ? 'var(--success)' : 'var(--error)' }}>
+            {result.verified ? '✅ Agent Verified' : '❌ Not Verified'}
+          </h4>
+          <div className="sidebar-field"><span className="text-xs">ENS Name</span><span className="text-sm">{result.ensName}</span></div>
+          <div className="sidebar-field"><span className="text-xs">Text Record Key</span><code className="sidebar-hash text-mono" style={{ fontSize: '0.65rem' }}>{result.textRecordKey}</code></div>
+          {result.textRecordValue && <div className="sidebar-field"><span className="text-xs">Value</span><span className="text-sm">{result.textRecordValue}</span></div>}
+          {result.resolverAddress && <div className="sidebar-field"><span className="text-xs">Resolver</span><code className="sidebar-hash text-mono">{result.resolverAddress}</code></div>}
+          {result.erc7930Encoding && <div className="sidebar-field"><span className="text-xs">ERC-7930</span><code className="sidebar-hash text-mono" style={{ fontSize: '0.6rem' }}>{result.erc7930Encoding}</code></div>}
+          {result.error && <div className="sidebar-field"><span className="text-xs">Error</span><span className="text-sm" style={{ color: 'var(--error)' }}>{result.error}</span></div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Verify() {
   const [proofJson, setProofJson] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
@@ -187,6 +310,11 @@ export default function Verify() {
               Load Sample Format
             </button>
           </aside>
+        </div>
+
+        {/* ENSIP-25 Agent Verification Section */}
+        <div style={{ marginTop: '2rem' }}>
+          <AgentVerifier />
         </div>
       </div>
     </div>

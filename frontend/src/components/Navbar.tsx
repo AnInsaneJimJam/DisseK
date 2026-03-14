@@ -5,7 +5,7 @@ import './Navbar.css';
 
 export default function Navbar() {
   const location = useLocation();
-  const { address, ensName, isConnected, isConnecting, connect, disconnect } = useWallet();
+  const { address, ensName, isConnected, isConnecting, connect, disconnect, identity } = useWallet();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navLinks = [
@@ -58,6 +58,11 @@ export default function Navbar() {
                 ? ensName || `${address!.slice(0, 6)}...${address!.slice(-4)}`
                 : 'Connect Wallet'}
           </button>
+          {isConnected && identity?.identityType === 'org-agent' && identity.parentName && (
+            <span className="identity-badge" title={`Agent under ${identity.parentName}`}>
+              🏢 {identity.parentName}
+            </span>
+          )}
 
           <button
             className="mobile-menu-btn"
