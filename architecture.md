@@ -1,54 +1,27 @@
-# Selective Disclosure via Merkle Range Proofs
+# Selective Disclosure Architecture
 
-## 1. Project Overview
-This project implements a "Partial View" system using Fileverse. It allows a user (Owner) to upload a document, and then selectively share a specific range of lines with another user (Bob) using Merkle Range Proofs.
+This architecture outlines a simplified approach to enable selective disclosure of a Fileverse document using Merkle Range Proofs. It allows an Owner to share a specific portion of a document with another user (Bob), while mathematically proving its authenticity against the original document's root.
 
-## 2. Cryptographic Specification
-### Leaf Construction
-To prevent Second Pre-image Attacks and rearrangement:
-`Leaf_i = Hash(0x00 || Index_i || Line_i || Salt_i)`
-- `0x00`: Domain separation byte for leaves.
-- `Index_i`: 32-bit integer representing the line number computationally.
-- `Line_i`: The actual content of the line.
-- `Salt_i`: 32-byte cryptographically secure random string.
+## 1. Fetching the Original Document
+- The **Owner** fetches their original encrypted document from the Fileverse API.
+- The document is decrypted and loaded into memory as an array of sequential lines.
 
-### Node Construction
-`Node = Hash(0x01 || LeftChild || RightChild)`
-- `0x01`: Domain separation byte for internal nodes.
+## 2. Running the Proof (Tree Generation)
+- The **Owner** passes the document into the Rust-based `DocumentTree` WASM engine.
+- The engine hashes each line (combining the line index and a salt to prevent tampering).
+- A **Merkle Tree** is generated, outputting an authoritative `MerkleRoot` that uniquely represents the entire document.
 
-### Tree Structure
-- **Dense Balanced Merkle Tree**: Padded to the nearest power of 2 using dummy hashes (`Hash(0x00 || "PAD" || Salt)`).
+## 3. Disclosing the Selected Part
+- The **Owner** selects a specific range of lines they want to share with Bob (e.g., lines 1 to 5).
+- The `DocumentTree` engine extracts:
+  1. The selected contiguous lines.
+  2. The corresponding salts for those lines.
+  3. A **Multi-Proof** (the minimal set of cryptographic hashes needed to bridge the gap between those specific lines and the master `MerkleRoot`).
+- The **Owner** creates a new partial document (`tested_doc.txt`) containing *only* the disclosed lines, and bundles it alongside the Multi-Proof package.
 
-## 3. Architecture & Tech Stack
-- **Languages**: Rust (for cryptography/WASM), TypeScript (for integration/orchestration).
-- **Orchestration**: `@fileverse/agents` (v2.0.1+)
-- **Cryptography**: `@fileverse/crypto` (ECIES, symmetric crypto)
-- **Proof Engine**: Rust compiled to WASM (`rs_merkle` or custom implementation).
-- **Storage**: IPFS via Fileverse Pinning.
-
-## 4. Workflows
-
-### Phase 1: Upload (Alice)
-1. Split document into lines.
-2. Generate secure 32-byte salt for each line.
-3. Pad to nearest power of 2.
-4. Hash leaves and build Merkle Tree to get `MerkleRoot`.
-5. Derive a symmetric key from Alice's private key.
-6. Encrypt the raw file and salt map with the symmetric key.
-7. Upload encrypted blob via `agent.create()` to IPFS.
-8. Store `MerkleRoot` in Fileverse metadata.
-
-### Phase 2: Selective Sharing (Alice -> Bob)
-1. Alice selects range (e.g., lines 1-80).
-2. Extract lines 1-80 and salts 1-80.
-3. Compute Range Proof (Multi-proof hashes needed to reach the root).
-4. Create Proof Package JSON.
-5. Encrypt Proof Package with Bob's ECIES public key.
-6. Share as a sidecar file or P2P message.
-
-### Phase 3: Verification (Bob)
-1. Fetch `MerkleRoot` from metadata via `agent.getFile()`.
-2. Decrypt Proof Package using Bob's ECIES private key.
-3. Re-hash lines 1-80 with salts 1-80 (including `Index`).
-4. Apply Multi-proof using the WASM engine.
-5. If `CalculatedRoot == AuthoritativeRoot`, verification passes.
+## 4. Verification (Bob's end)
+- **Bob** receives the new partial document (`tested_doc.txt`) and the Multi-Proof package.
+- **Bob** independently fetches the authoritative `MerkleRoot` directly from the Fileverse metadata/API to ensure trust.
+- **Bob** inputs the disclosed lines, the salts, and the Multi-Proof into his own local `DocumentTree` verifier.
+- The local WASM engine mathematically confirms whether the partial document reconstructs to the exact same authoritative `MerkleRoot`. 
+- **Result:** Bob has absolute cryptographic certainty that the shared lines perfectly match the original document on Fileverse, without ever seeing the remaining undisclosed content.
