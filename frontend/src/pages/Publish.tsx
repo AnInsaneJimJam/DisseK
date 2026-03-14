@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Contract } from 'ethers';
 import {
   registerHost,
   createDocumentListing,
@@ -9,6 +10,7 @@ import {
   type FileverseDoc,
 } from '../api/marketplace';
 import { useWallet } from '../context/WalletContext';
+import { MERKLE_ANCHOR_ADDRESS, MERKLE_ANCHOR_ABI } from '../contracts/MerkleAnchor';
 import './Publish.css';
 
 interface SectionDef {
@@ -26,7 +28,7 @@ interface FvDocSummary {
 }
 
 export default function Publish() {
-  const { address: walletAddress, ensName: walletEnsName, isConnected: walletConnected } = useWallet();
+  const { address: walletAddress, ensName: walletEnsName, isConnected: walletConnected, signer } = useWallet();
   const [step, setStep] = useState(1);
 
   // Step 1: Host info + connect
@@ -59,6 +61,8 @@ export default function Publish() {
   const [totalLeaves, setTotalLeaves] = useState(0);
   const [isBuilding, setIsBuilding] = useState(false);
   const [isListing, setIsListing] = useState(false);
+  const [isAnchoring, setIsAnchoring] = useState(false);
+  const [anchorTx, setAnchorTx] = useState('');
   const [listingResult, setListingResult] = useState<{ docId: string } | null>(null);
   const [hostId, setHostId] = useState('');
   const [error, setError] = useState('');
@@ -139,11 +143,36 @@ export default function Publish() {
     }
   };
 
-  // Register host + list document on marketplace
+  // Anchor Merkle root on-chain, then register host + list document
   const handleListOnMarketplace = async () => {
     if (!selectedDoc) return;
     setIsListing(true);
     setError('');
+
+    let txHash = '';
+
+    // Step A: Anchor on-chain if wallet is connected
+    if (signer && merkleRoot) {
+      try {
+        setIsAnchoring(true);
+        const contract = new Contract(MERKLE_ANCHOR_ADDRESS, MERKLE_ANCHOR_ABI, signer);
+        // Convert hex merkle root to bytes32
+        const rootBytes32 = '0x' + merkleRoot;
+        const tx = await contract.anchorRoot(selectedDdocId, rootBytes32, totalLeaves);
+        txHash = tx.hash;
+        setAnchorTx(txHash);
+        // Wait for 1 confirmation
+        await tx.wait(1);
+      } catch (err: any) {
+        console.error('On-chain anchor failed:', err);
+        // Don't block listing if anchor fails — just warn
+        setError(`On-chain anchor failed (listing will proceed without it): ${err.message}`);
+      } finally {
+        setIsAnchoring(false);
+      }
+    }
+
+    // Step B: Register host + list on marketplace
     try {
       const host = await registerHost({
         name: hostName,
@@ -164,7 +193,7 @@ export default function Publish() {
         tags: docTags.split(',').map((t) => t.trim()).filter(Boolean),
         totalLines: selectedDoc.lineCount,
         merkleRoot,
-        anchorTx: '',
+        anchorTx: txHash,
         anchorChain: 'sepolia',
         sellLineByLine,
         pricePerLine: parseFloat(lineByLinePrice) || 0,
@@ -650,14 +679,14 @@ export default function Publish() {
                   {isListing ? (
                     <>
                       <span className="spinner" />
-                      Registering host & listing document...
+                      {isAnchoring ? 'Anchoring Merkle root on-chain...' : 'Registering host & listing document...'}
                     </>
                   ) : (
                     <>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M13 10V3L4 14h7v7l9-11h-7z" strokeLinejoin="round"/>
                       </svg>
-                      List on Marketplace
+                      {walletConnected ? 'Anchor On-Chain & List' : 'List on Marketplace'}
                     </>
                   )}
                 </button>
@@ -692,6 +721,20 @@ export default function Publish() {
                       <span className="text-xs">Fileverse ddocId</span>
                       <code className="sidebar-hash text-mono">{selectedDdocId}</code>
                     </div>
+                    {anchorTx && (
+                      <div className="sidebar-field">
+                        <span className="text-xs">On-Chain Anchor Tx (Sepolia)</span>
+                        <a
+                          href={`https://sepolia.etherscan.io/tx/${anchorTx}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="sidebar-hash text-mono"
+                          style={{ color: 'var(--accent-violet)', textDecoration: 'underline' }}
+                        >
+                          {anchorTx}
+                        </a>
+                      </div>
+                    )}
                   </div>
                   <a href="/marketplace" className="btn btn-outline" id="view-marketplace">
                     View on Marketplace

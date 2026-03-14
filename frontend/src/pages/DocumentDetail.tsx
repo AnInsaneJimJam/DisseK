@@ -577,6 +577,20 @@ export default function DocumentDetail() {
                 <span className="text-xs">Verification</span>
                 <span className="text-sm">Server-side (Rust WASM)</span>
               </div>
+              {doc.anchorTx && (
+                <div className="sidebar-field">
+                  <span className="text-xs">On-Chain Anchor</span>
+                  <a
+                    href={`https://${doc.anchorChain === 'sepolia' ? 'sepolia.' : ''}etherscan.io/tx/${doc.anchorTx}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm"
+                    style={{ color: 'var(--accent-violet)', textDecoration: 'underline', wordBreak: 'break-all', fontFamily: 'var(--font-mono)', fontSize: '0.7rem' }}
+                  >
+                    {doc.anchorTx.slice(0, 10)}...{doc.anchorTx.slice(-8)} ↗
+                  </a>
+                </div>
+              )}
             </div>
           </aside>
         </div>
