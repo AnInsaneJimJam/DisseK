@@ -52,9 +52,7 @@ export default function Publish() {
   const [docTags, setDocTags] = useState('');
   const [sellLineByLine, setSellLineByLine] = useState(false);
   const [lineByLinePrice, setLineByLinePrice] = useState('1');
-  const [sections, setSections] = useState<SectionDef[]>([
-    { name: '', lineStart: '', lineEnd: '', pricePerLine: '1', description: '' },
-  ]);
+  const [sections, setSections] = useState<SectionDef[]>([]);
 
   // Step 3: Build tree + list
   const [merkleRoot, setMerkleRoot] = useState('');
@@ -552,6 +550,24 @@ export default function Publish() {
               )}
 
               <div className="sections-editor" id="sections-editor">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                  <span className="text-sm" style={{ fontWeight: 600 }}>Predefined Sections <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional)</span></span>
+                  {sections.length === 0 && (
+                    <button className="btn btn-secondary btn-sm" onClick={addSection} id="add-section-btn">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M12 5v14M5 12h14" strokeLinecap="round"/>
+                      </svg>
+                      Add Section
+                    </button>
+                  )}
+                </div>
+
+                {sections.length === 0 && (
+                  <p className="text-xs" style={{ color: 'var(--text-muted)', padding: '0.75rem', background: 'var(--bg-secondary)', borderRadius: '0.375rem', border: '1px solid var(--border)' }}>
+                    No sections defined. {sellLineByLine ? 'Buyers will purchase using custom line ranges.' : 'Enable line-by-line purchases above, or add sections to define purchasable ranges.'}
+                  </p>
+                )}
+
                 {sections.map((sec, idx) => (
                   <div key={idx} className="section-editor-row">
                     <div className="section-editor-fields">
@@ -608,22 +624,22 @@ export default function Publish() {
                         />
                       </div>
                     </div>
-                    {sections.length > 1 && (
-                      <button className="btn btn-ghost btn-icon remove-section-btn" onClick={() => removeSection(idx)} aria-label="Remove section">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                          <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round"/>
-                        </svg>
-                      </button>
-                    )}
+                    <button className="btn btn-ghost btn-icon remove-section-btn" onClick={() => removeSection(idx)} aria-label="Remove section">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round"/>
+                      </svg>
+                    </button>
                   </div>
                 ))}
 
-                <button className="btn btn-secondary btn-sm" onClick={addSection} id="add-section-btn">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M12 5v14M5 12h14" strokeLinecap="round"/>
-                  </svg>
-                  Add Section
-                </button>
+                {sections.length > 0 && (
+                  <button className="btn btn-secondary btn-sm" onClick={addSection} id="add-section-btn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 5v14M5 12h14" strokeLinecap="round"/>
+                    </svg>
+                    Add Section
+                  </button>
+                )}
               </div>
 
               <div className="publish-form-actions">
@@ -631,7 +647,7 @@ export default function Publish() {
                 <button
                   className={`btn btn-primary ${isBuilding ? 'btn-loading' : ''}`}
                   onClick={handleBuildTree}
-                  disabled={isBuilding || sections.every((s) => !s.name)}
+                  disabled={isBuilding || (!sellLineByLine && sections.every((s) => !s.name))}
                   id="build-tree-btn"
                 >
                   {isBuilding ? (
