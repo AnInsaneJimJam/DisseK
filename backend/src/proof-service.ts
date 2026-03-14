@@ -89,6 +89,23 @@ export function generateDisclosure(
 }
 
 /**
+ * Build the Merkle tree for a full document and return just the root hash.
+ * Used during the Publish flow — no disclosure is generated.
+ */
+export function buildTree(content: string): {
+  root: string;
+  totalLeaves: number;
+  lineCount: number;
+} {
+  const lines = content.split("\n");
+  const docTree = new DocumentTree(lines);
+  const root = toHex(docTree.get_root());
+  const totalLeaves = docTree.get_total_leaves();
+  docTree.free();
+  return { root, totalLeaves, lineCount: lines.length };
+}
+
+/**
  * Verify that disclosed lines + proof match an authoritative Merkle root.
  */
 export function verifyDisclosure(

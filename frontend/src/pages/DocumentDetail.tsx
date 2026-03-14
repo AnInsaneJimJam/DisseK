@@ -1,41 +1,121 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { MOCK_DOCUMENTS } from '../data/mockData';
+import {
+  getDocument,
+  purchaseSection,
+  verifyProof,
+  type DocumentListing,
+  type ProofPackage,
+} from '../api/marketplace';
 import './DocumentDetail.css';
+
+interface SectionPurchaseData {
+  disclosedLines: string[];
+  proofPackage: ProofPackage;
+  disclosureLink: string | null;
+}
 
 export default function DocumentDetail() {
   const { id } = useParams<{ id: string }>();
-  const doc = MOCK_DOCUMENTS.find(d => d.id === id);
-  const [purchasedSections, setPurchasedSections] = useState<Set<string>>(new Set());
+  const [doc, setDoc] = useState<DocumentListing | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [purchasedSections, setPurchasedSections] = useState<Map<string, SectionPurchaseData>>(new Map());
+  const [purchasingSection, setPurchasingSection] = useState<string | null>(null);
   const [verifyingSection, setVerifyingSection] = useState<string | null>(null);
   const [verifiedSections, setVerifiedSections] = useState<Set<string>>(new Set());
+  const [verifyMessages, setVerifyMessages] = useState<Map<string, string>>(new Map());
 
-  if (!doc) {
+  useEffect(() => {
+    if (!id) return;
+    setLoading(true);
+    getDocument(id)
+      .then(setDoc)
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="not-found-page">
+        <div className="container">
+          <h1 className="heading-lg">Loading...</h1>
+        </div>
+      </div>
+    );
+  }
+
+  if (!doc || error) {
     return (
       <div className="not-found-page">
         <div className="container">
           <h1 className="heading-lg">Document not found</h1>
-          <p className="text-body">The document you're looking for doesn't exist.</p>
+          <p className="text-body">{error || "The document you're looking for doesn't exist."}</p>
           <Link to="/marketplace" className="btn btn-primary" id="back-to-marketplace">
-            ← Back to Marketplace
+            Back to Marketplace
           </Link>
         </div>
       </div>
     );
   }
 
-  const handlePurchase = (sectionId: string) => {
-    // Simulate x402 payment flow
-    setPurchasedSections(prev => new Set([...prev, sectionId]));
+  const hostName = doc.host?.name || 'Unknown Host';
+
+  const handlePurchase = async (sectionId: string) => {
+    setPurchasingSection(sectionId);
+    try {
+      const result = await purchaseSection(
+        doc.id,
+        sectionId,
+        '0xBuyerAddress' // In production: from wallet
+      );
+      if (result.proofPackage) {
+        setPurchasedSections((prev) => {
+          const next = new Map(prev);
+          next.set(sectionId, {
+            disclosedLines: result.disclosedLines || [],
+            proofPackage: result.proofPackage,
+            disclosureLink: result.disclosureLink,
+          });
+          return next;
+        });
+      }
+    } catch (err: any) {
+      alert(`Purchase failed: ${err.message}`);
+    } finally {
+      setPurchasingSection(null);
+    }
   };
 
-  const handleVerify = (sectionId: string) => {
+  const handleVerify = async (sectionId: string) => {
+    const data = purchasedSections.get(sectionId);
+    if (!data) return;
+
     setVerifyingSection(sectionId);
-    // Simulate WASM Merkle proof verification
-    setTimeout(() => {
-      setVerifiedSections(prev => new Set([...prev, sectionId]));
+    try {
+      const result = await verifyProof(
+        data.disclosedLines,
+        data.proofPackage,
+        doc.id
+      );
+      if (result.verified) {
+        setVerifiedSections((prev) => new Set([...prev, sectionId]));
+      }
+      setVerifyMessages((prev) => {
+        const next = new Map(prev);
+        next.set(sectionId, result.message);
+        return next;
+      });
+    } catch (err: any) {
+      setVerifyMessages((prev) => {
+        const next = new Map(prev);
+        next.set(sectionId, `Verification error: ${err.message}`);
+        return next;
+      });
+    } finally {
       setVerifyingSection(null);
-    }, 1500);
+    }
   };
 
   return (
@@ -57,11 +137,13 @@ export default function DocumentDetail() {
             <div className="doc-detail-header fade-in" id="doc-header">
               <div className="doc-detail-author-row">
                 <div className="doc-detail-avatar" style={{ background: `linear-gradient(135deg, hsl(${(doc.title.length * 37) % 360}, 60%, 50%), hsl(${(doc.title.length * 37 + 40) % 360}, 70%, 40%))` }}>
-                  {doc.author.charAt(0)}
+                  {hostName.charAt(0)}
                 </div>
                 <div>
-                  <span className="doc-detail-author-name">{doc.author}</span>
-                  <span className="doc-detail-author-addr text-mono">{doc.authorAddress}</span>
+                  <span className="doc-detail-author-name">{hostName}</span>
+                  <span className="doc-detail-author-addr text-mono">
+                    {doc.host?.trustModel === 'institution' ? doc.host.institution : `Reputation: ${doc.host?.reputation ?? 0}/100`}
+                  </span>
                 </div>
               </div>
 
@@ -72,6 +154,9 @@ export default function DocumentDetail() {
                 {doc.tags.map(tag => (
                   <span key={tag} className="badge">{tag}</span>
                 ))}
+                <span className={`badge ${doc.host?.trustModel === 'institution' ? 'badge-success' : ''}`}>
+                  {doc.host?.trustModel === 'institution' ? 'Institution Signed' : 'Reputation Based'}
+                </span>
               </div>
 
               <div className="doc-detail-meta">
@@ -83,19 +168,12 @@ export default function DocumentDetail() {
                 </span>
                 <span className="text-sm">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" strokeLinecap="round" strokeLinejoin="round"/>
-                    <circle cx="9" cy="7" r="4"/>
-                  </svg>
-                  {doc.purchases} purchases
-                </span>
-                <span className="text-sm">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                     <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
                     <line x1="16" y1="2" x2="16" y2="6"/>
                     <line x1="8" y1="2" x2="8" y2="6"/>
                     <line x1="3" y1="10" x2="21" y2="10"/>
                   </svg>
-                  {doc.createdAt}
+                  {new Date(doc.createdAt).toLocaleDateString()}
                 </span>
               </div>
             </div>
@@ -105,9 +183,12 @@ export default function DocumentDetail() {
               <h2 className="heading-md">Sections</h2>
               <div className="sections-list">
                 {doc.sections.map((section, idx) => {
-                  const isPurchased = section.isFree || purchasedSections.has(section.id);
+                  const isPurchased = purchasedSections.has(section.id);
                   const isVerified = verifiedSections.has(section.id);
                   const isVerifying = verifyingSection === section.id;
+                  const isPurchasing = purchasingSection === section.id;
+                  const lineCount = section.lineEnd - section.lineStart + 1;
+                  const totalPrice = lineCount * section.pricePerLine;
 
                   return (
                     <div
@@ -130,21 +211,21 @@ export default function DocumentDetail() {
                             )}
                           </div>
                           <span className="section-item-range text-mono text-xs">
-                            Lines {section.lineStart}–{section.lineEnd}
+                            Lines {section.lineStart}–{section.lineEnd} ({lineCount} lines)
                           </span>
                         </div>
                         <div className="section-item-price">
-                          {section.isFree ? (
+                          {section.pricePerLine === 0 ? (
                             <span className="price price-free">Free</span>
                           ) : (
-                            <span className="price">{section.price} {section.currency}</span>
+                            <span className="price">${totalPrice.toFixed(2)} (${section.pricePerLine}/line)</span>
                           )}
                         </div>
                       </div>
 
-                      <p className="section-item-preview text-sm">{section.preview}</p>
+                      <p className="section-item-preview text-sm">{section.description}</p>
 
-                      {isPurchased && (
+                      {isPurchased && purchasedSections.get(section.id) && (
                         <div className="section-item-content">
                           <div className="section-content-box">
                             <div className="section-content-label text-xs">
@@ -152,25 +233,57 @@ export default function DocumentDetail() {
                                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
                                 <path d="M7 11V7a5 5 0 0110 0v4"/>
                               </svg>
-                              Content Unlocked
+                              Content Unlocked — {purchasedSections.get(section.id)!.disclosedLines.length} lines delivered with Merkle proof
                             </div>
-                            <p className="text-sm">{section.preview} <span className="text-muted">[Simulated content — full lines would be delivered via x402 proof bundle]</span></p>
+                            <div className="extracted-lines" style={{ maxHeight: '200px', marginTop: '0.5rem' }}>
+                              {purchasedSections.get(section.id)!.disclosedLines.map((line, i) => (
+                                <div key={i} className="extracted-line">
+                                  <span className="line-num text-mono">{section.lineStart + i}</span>
+                                  <span className="line-content text-sm">{line || <span style={{ color: 'var(--text-muted)' }}>(empty)</span>}</span>
+                                </div>
+                              ))}
+                            </div>
+                            {purchasedSections.get(section.id)!.disclosureLink && (
+                              <a
+                                href={purchasedSections.get(section.id)!.disclosureLink!}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="btn btn-outline btn-sm"
+                                style={{ marginTop: '0.75rem' }}
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" strokeLinecap="round" strokeLinejoin="round"/>
+                                  <path d="M15 3h6v6M10 14L21 3" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                                View on Fileverse
+                              </a>
+                            )}
                           </div>
                         </div>
                       )}
 
                       <div className="section-item-actions">
-                        {!isPurchased && !section.isFree && (
+                        {!isPurchased && (
                           <button
-                            className="btn btn-primary btn-sm"
+                            className={`btn btn-primary btn-sm ${isPurchasing ? 'btn-loading' : ''}`}
                             onClick={() => handlePurchase(section.id)}
+                            disabled={isPurchasing}
                             id={`buy-${section.id}`}
                           >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                              <path d="M7 11V7a5 5 0 0110 0v4"/>
-                            </svg>
-                            Purchase via x402
+                            {isPurchasing ? (
+                              <>
+                                <span className="spinner" />
+                                Purchasing...
+                              </>
+                            ) : (
+                              <>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                                  <path d="M7 11V7a5 5 0 0110 0v4"/>
+                                </svg>
+                                {section.pricePerLine === 0 ? 'Get Free Section' : `Buy for $${totalPrice.toFixed(2)}`}
+                              </>
+                            )}
                           </button>
                         )}
                         {isPurchased && !isVerified && (
@@ -202,8 +315,13 @@ export default function DocumentDetail() {
                               <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round"/>
                               <circle cx="12" cy="12" r="10" strokeWidth="1.5"/>
                             </svg>
-                            <span>Lines {section.lineStart}–{section.lineEnd} verified against root <code>{doc.merkleRoot}</code></span>
+                            <span>Lines {section.lineStart}–{section.lineEnd} verified against root <code>{doc.merkleRoot.slice(0, 16)}...</code></span>
                           </div>
+                        )}
+                        {verifyMessages.has(section.id) && !isVerified && (
+                          <p className="text-xs" style={{ color: 'var(--error)', marginTop: '0.5rem' }}>
+                            {verifyMessages.get(section.id)}
+                          </p>
                         )}
                       </div>
                     </div>
@@ -221,20 +339,38 @@ export default function DocumentDetail() {
                 <span className="text-xs">Merkle Root</span>
                 <code className="sidebar-hash text-mono">{doc.merkleRoot}</code>
               </div>
-              <div className="sidebar-field">
-                <span className="text-xs">Anchor Tx</span>
-                <code className="sidebar-hash text-mono">{doc.anchorTx}</code>
-              </div>
+              {doc.anchorTx && (
+                <div className="sidebar-field">
+                  <span className="text-xs">Anchor Tx</span>
+                  <code className="sidebar-hash text-mono">{doc.anchorTx}</code>
+                </div>
+              )}
               <div className="sidebar-field">
                 <span className="text-xs">Network</span>
-                <span className="badge badge-violet">Sepolia</span>
+                <span className="badge badge-violet">{doc.anchorChain || 'Sepolia'}</span>
               </div>
-              {doc.verified && (
+              {doc.merkleRoot && (
                 <div className="sidebar-verified">
                   <span className="verified-dot" />
                   Root anchored on-chain
                 </div>
               )}
+            </div>
+
+            <div className="sidebar-card card" id="sidebar-host-info">
+              <h4 className="heading-sm">Host Info</h4>
+              <div className="sidebar-field">
+                <span className="text-xs">Name</span>
+                <span className="text-sm">{hostName}</span>
+              </div>
+              <div className="sidebar-field">
+                <span className="text-xs">Trust Model</span>
+                <span className="text-sm">{doc.host?.trustModel === 'institution' ? `Institution: ${doc.host.institution}` : 'Reputation Based'}</span>
+              </div>
+              <div className="sidebar-field">
+                <span className="text-xs">Reputation Score</span>
+                <span className="text-sm">{doc.host?.reputation ?? 0}/100</span>
+              </div>
             </div>
 
             <div className="sidebar-card card" id="sidebar-proof-info">
@@ -249,11 +385,11 @@ export default function DocumentDetail() {
               </div>
               <div className="sidebar-field">
                 <span className="text-xs">Tree Depth</span>
-                <span className="text-sm">~{Math.ceil(Math.log2(doc.totalLines))} levels</span>
+                <span className="text-sm">~{doc.totalLines > 0 ? Math.ceil(Math.log2(doc.totalLines)) : 0} levels</span>
               </div>
               <div className="sidebar-field">
                 <span className="text-xs">Verification</span>
-                <span className="text-sm">Browser (Rust WASM)</span>
+                <span className="text-sm">Server-side (Rust WASM)</span>
               </div>
             </div>
           </aside>

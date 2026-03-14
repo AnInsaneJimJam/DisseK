@@ -1,9 +1,11 @@
 import "dotenv/config";
 import express from "express";
+import cors from "cors";
 import { FileverseClient } from "./fileverse-client.js";
-import { generateDisclosure, verifyDisclosure } from "./proof-service.js";
+import { generateDisclosure, verifyDisclosure, buildTree } from "./proof-service.js";
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 3001;
@@ -70,24 +72,37 @@ app.post("/disclose", async (req, res) => {
       ...disclosedLines,
     ].join("\n");
 
-    // 4. Create the new partial document on Fileverse
-    console.log(`[3/4] Creating partial disclosure document on Fileverse...`);
-    const newDoc = await client.createDocument(
-      `[Disclosure] ${originalDoc.title} (lines ${startLine}-${endLine})`,
-      partialContent
-    );
-
-    console.log(
-      `[4/4] Done! New doc created: ${newDoc.ddocId} (sync: ${newDoc.syncStatus})`
-    );
+    // 4. Try to create a new partial document on Fileverse (non-fatal if it fails)
+    let disclosureDocId: string | null = null;
+    let disclosureLink: string | null = null;
+    let syncStatus: string | null = null;
+    try {
+      console.log(`[3/4] Creating partial disclosure document on Fileverse...`);
+      const newDoc = await client.createDocument(
+        `[Disclosure] ${originalDoc.title} (lines ${startLine}-${endLine})`,
+        partialContent
+      );
+      disclosureDocId = newDoc.ddocId;
+      disclosureLink = newDoc.link;
+      syncStatus = newDoc.syncStatus;
+      console.log(
+        `[4/4] Done! New doc created: ${newDoc.ddocId} (sync: ${newDoc.syncStatus})`
+      );
+    } catch (fvErr: any) {
+      console.warn(
+        `[3/4] Fileverse doc creation failed (non-fatal): ${fvErr.message}`
+      );
+      console.log(`[4/4] Returning proof without Fileverse disclosure doc.`);
+    }
 
     res.json({
       success: true,
       originalDocId: ddocId,
-      disclosureDocId: newDoc.ddocId,
-      disclosureLink: newDoc.link,
-      syncStatus: newDoc.syncStatus,
+      disclosureDocId,
+      disclosureLink,
+      syncStatus,
       linesDisclosed: disclosedLines.length,
+      disclosedLines,
       proofPackage,
     });
   } catch (err: any) {
@@ -171,6 +186,96 @@ app.post("/verify", async (req, res) => {
     });
   } catch (err: any) {
     console.error("Verification error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Fileverse Document Browsing (for Publish flow) ─────────────────
+
+/**
+ * GET /documents
+ * Lists documents from the host's Fileverse instance via MCP.
+ * Query: ?limit=10&skip=0
+ */
+app.get("/documents", async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = parseInt(req.query.skip as string) || 0;
+    const client = getFileverseClient();
+    const result = await client.listDocuments(limit, skip);
+    res.json(result);
+  } catch (err: any) {
+    console.error("List documents error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /documents/:ddocId
+ * Fetches a single document from Fileverse with its content.
+ * Returns the doc metadata plus lineCount for section definition.
+ */
+app.get("/documents/:ddocId", async (req, res) => {
+  try {
+    const client = getFileverseClient();
+    const doc = await client.getDocument(req.params.ddocId);
+    const lines = doc.content ? doc.content.split("\n") : [];
+    res.json({
+      ddocId: doc.ddocId,
+      title: doc.title,
+      content: doc.content,
+      lineCount: lines.length,
+      lines,
+      syncStatus: doc.syncStatus,
+      link: doc.link,
+      createdAt: doc.createdAt,
+      updatedAt: doc.updatedAt,
+    });
+  } catch (err: any) {
+    console.error("Get document error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /build-tree
+ * Body: { ddocId: string }
+ *
+ * Fetches the document from Fileverse and builds the full Merkle tree.
+ * Returns the root hash and tree metadata — no disclosure is generated.
+ * Used during the Publish flow to get the root before listing on marketplace.
+ */
+app.post("/build-tree", async (req, res) => {
+  try {
+    const { ddocId } = req.body;
+    if (!ddocId) {
+      res.status(400).json({ error: "ddocId required" });
+      return;
+    }
+
+    const client = getFileverseClient();
+    const doc = await client.getDocument(ddocId);
+
+    if (!doc.content) {
+      res.status(404).json({ error: "Document has no content" });
+      return;
+    }
+
+    const { root, totalLeaves, lineCount } = buildTree(doc.content);
+
+    console.log(
+      `Built Merkle tree for ${ddocId}: root=${root.slice(0, 16)}... leaves=${totalLeaves} lines=${lineCount}`
+    );
+
+    res.json({
+      ddocId,
+      title: doc.title,
+      merkleRoot: root,
+      totalLeaves,
+      lineCount,
+    });
+  } catch (err: any) {
+    console.error("Build tree error:", err);
     res.status(500).json({ error: err.message });
   }
 });

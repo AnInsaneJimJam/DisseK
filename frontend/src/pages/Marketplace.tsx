@@ -1,22 +1,37 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import DocumentCard from '../components/DocumentCard';
-import { MOCK_DOCUMENTS, TAGS, STATS } from '../data/mockData';
+import { listDocuments, type DocumentListing } from '../api/marketplace';
 import './Marketplace.css';
+
+const TAGS = ['All', 'DeFi', 'Security', 'Research', 'AI', 'ZK', 'MEV', 'Infrastructure'];
 
 export default function Marketplace() {
   const [activeTag, setActiveTag] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [documents, setDocuments] = useState<DocumentListing[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const filtered = useMemo(() => {
-    return MOCK_DOCUMENTS.filter(doc => {
-      const matchesTag = activeTag === 'All' || doc.tags.includes(activeTag);
-      const matchesSearch = searchQuery === '' ||
-        doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        doc.author.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        doc.description.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesTag && matchesSearch;
-    });
-  }, [activeTag, searchQuery]);
+  const fetchDocs = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await listDocuments(searchQuery, activeTag);
+      setDocuments(data.documents);
+    } catch (err: any) {
+      setError(err.message);
+      setDocuments([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [searchQuery, activeTag]);
+
+  useEffect(() => {
+    const timer = setTimeout(fetchDocs, 300);
+    return () => clearTimeout(timer);
+  }, [fetchDocs]);
+
+  const totalHosts = new Set(documents.map(d => d.hostId)).size;
 
   return (
     <div className="marketplace-page">
@@ -24,29 +39,24 @@ export default function Marketplace() {
         {/* Header */}
         <div className="marketplace-header fade-in" id="marketplace-header">
           <h1 className="heading-lg">Marketplace</h1>
-          <p className="text-body">Browse verified documents and purchase access to individual sections.</p>
+          <p className="text-body">Browse verified documents and purchase access to individual sections. All content is cryptographically proven.</p>
         </div>
 
         {/* Stats Bar */}
         <div className="marketplace-stats fade-in stagger-1" id="marketplace-stats">
           <div className="stat-item">
-            <span className="stat-value">{STATS.totalDocuments}</span>
+            <span className="stat-value">{documents.length}</span>
             <span className="stat-label">Documents</span>
           </div>
           <span className="stat-sep">·</span>
           <div className="stat-item">
-            <span className="stat-value">{STATS.totalSectionsSold.toLocaleString()}+</span>
-            <span className="stat-label">Sections Sold</span>
+            <span className="stat-value">{documents.reduce((s, d) => s + d.sections.length, 0)}</span>
+            <span className="stat-label">Sections</span>
           </div>
           <span className="stat-sep">·</span>
           <div className="stat-item">
-            <span className="stat-value">{STATS.totalRevenue}</span>
-            <span className="stat-label">Revenue</span>
-          </div>
-          <span className="stat-sep">·</span>
-          <div className="stat-item">
-            <span className="stat-value">{STATS.activeAuthors}</span>
-            <span className="stat-label">Authors</span>
+            <span className="stat-value">{totalHosts}</span>
+            <span className="stat-label">Hosts</span>
           </div>
         </div>
 
@@ -82,17 +92,25 @@ export default function Marketplace() {
 
         {/* Results */}
         <div className="marketplace-results-info">
-          <span className="text-sm">{filtered.length} document{filtered.length !== 1 ? 's' : ''} found</span>
+          <span className="text-sm">
+            {loading ? 'Loading...' : `${documents.length} document${documents.length !== 1 ? 's' : ''} found`}
+          </span>
         </div>
 
+        {error && (
+          <div className="empty-state" id="error-state">
+            <p className="text-sm" style={{ color: 'var(--error)' }}>Failed to load: {error}</p>
+          </div>
+        )}
+
         {/* Document Grid */}
-        {filtered.length > 0 ? (
+        {!loading && documents.length > 0 ? (
           <div className="document-grid" id="document-grid">
-            {filtered.map((doc, i) => (
+            {documents.map((doc, i) => (
               <DocumentCard key={doc.id} doc={doc} index={i} />
             ))}
           </div>
-        ) : (
+        ) : !loading && !error ? (
           <div className="empty-state" id="empty-state">
             <div className="empty-icon">
               <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1">
@@ -101,9 +119,9 @@ export default function Marketplace() {
               </svg>
             </div>
             <h3>No documents found</h3>
-            <p className="text-sm">Try adjusting your search or filter criteria.</p>
+            <p className="text-sm">No hosts have listed documents yet, or try adjusting your search.</p>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

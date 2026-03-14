@@ -1,16 +1,18 @@
 import { Link } from 'react-router-dom';
-import type { Document } from '../data/mockData';
+import type { DocumentListing } from '../api/marketplace';
 import './DocumentCard.css';
 
 interface Props {
-  doc: Document;
+  doc: DocumentListing;
   index?: number;
 }
 
 export default function DocumentCard({ doc, index = 0 }: Props) {
-  const paidSections = doc.sections.filter(s => !s.isFree);
-  const minPrice = paidSections.length > 0 ? Math.min(...paidSections.map(s => s.price)) : 0;
-  const maxPrice = paidSections.length > 0 ? Math.max(...paidSections.map(s => s.price)) : 0;
+  const prices = doc.sections.map(s => s.pricePerLine * (s.lineEnd - s.lineStart + 1));
+  const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
+  const maxPrice = prices.length > 0 ? Math.max(...prices) : 0;
+
+  const hostName = doc.host?.name || 'Unknown Host';
 
   return (
     <Link
@@ -21,13 +23,15 @@ export default function DocumentCard({ doc, index = 0 }: Props) {
       <div className="doc-card-header">
         <div className="doc-card-author-row">
           <div className="doc-card-avatar" style={{ background: `linear-gradient(135deg, hsl(${(doc.title.length * 37) % 360}, 60%, 50%), hsl(${(doc.title.length * 37 + 40) % 360}, 70%, 40%))` }}>
-            {doc.author.charAt(0)}
+            {hostName.charAt(0)}
           </div>
           <div className="doc-card-author-info">
-            <span className="doc-card-author">{doc.author}</span>
-            <span className="doc-card-address text-mono">{doc.authorAddress}</span>
+            <span className="doc-card-author">{hostName}</span>
+            <span className="doc-card-address text-mono">
+              {doc.host?.trustModel === 'institution' ? doc.host.institution : `Rep: ${doc.host?.reputation ?? 0}`}
+            </span>
           </div>
-          {doc.verified && (
+          {doc.merkleRoot && (
             <div className="doc-card-verified" title="Merkle root anchored on-chain">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                 <path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -45,6 +49,9 @@ export default function DocumentCard({ doc, index = 0 }: Props) {
         {doc.tags.map(tag => (
           <span key={tag} className="badge">{tag}</span>
         ))}
+        <span className={`badge ${doc.host?.trustModel === 'institution' ? 'badge-success' : ''}`}>
+          {doc.host?.trustModel === 'institution' ? 'Signed' : 'Reputation'}
+        </span>
       </div>
 
       <div className="doc-card-footer">
@@ -57,9 +64,9 @@ export default function DocumentCard({ doc, index = 0 }: Props) {
           </span>
           <span className="doc-card-purchases">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8z" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M4 6h16M4 12h16M4 18h10" strokeLinecap="round"/>
             </svg>
-            {doc.purchases}
+            {doc.totalLines} lines
           </span>
         </div>
         <div className="doc-card-price">
@@ -67,9 +74,9 @@ export default function DocumentCard({ doc, index = 0 }: Props) {
             <span className="price price-free">Free</span>
           ) : (
             <span className="price">
-              {minPrice === maxPrice
-                ? `${maxPrice} USDC`
-                : `${minPrice} — ${maxPrice} USDC`}
+              {minPrice.toFixed(2) === maxPrice.toFixed(2)
+                ? `$${maxPrice.toFixed(2)}`
+                : `$${minPrice.toFixed(2)} — $${maxPrice.toFixed(2)}`}
             </span>
           )}
         </div>

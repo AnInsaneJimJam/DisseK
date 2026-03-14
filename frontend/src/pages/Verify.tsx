@@ -1,31 +1,54 @@
 import { useState } from 'react';
+import { verifyProof } from '../api/marketplace';
 import './Verify.css';
 
 export default function Verify() {
-  const [merkleRoot, setMerkleRoot] = useState('');
   const [proofJson, setProofJson] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
   const [result, setResult] = useState<'valid' | 'invalid' | null>(null);
+  const [resultMessage, setResultMessage] = useState('');
+  const [parsedRoot, setParsedRoot] = useState('');
 
-  const handleVerify = () => {
+  const handleVerify = async () => {
     setIsVerifying(true);
     setResult(null);
-    // Simulate Rust WASM verify_proof(proof, root) call
-    setTimeout(() => {
+    setResultMessage('');
+
+    try {
+      const parsed = JSON.parse(proofJson);
+      const { disclosedLines, proofPackage } = parsed;
+
+      if (!disclosedLines || !proofPackage) {
+        throw new Error('JSON must contain "disclosedLines" (string[]) and "proofPackage" (object)');
+      }
+
+      setParsedRoot(proofPackage.original_root || '');
+
+      const res = await verifyProof(disclosedLines, proofPackage);
+      setResult(res.verified ? 'valid' : 'invalid');
+      setResultMessage(res.message);
+    } catch (err: any) {
+      setResult('invalid');
+      setResultMessage(err.message || 'Failed to verify');
+    } finally {
       setIsVerifying(false);
-      // If proof JSON is populated, simulate a valid result
-      setResult(proofJson.trim().length > 5 ? 'valid' : 'invalid');
-    }, 2000);
+    }
   };
 
   const sampleProof = JSON.stringify({
-    docId: '0xabc123...',
-    sectionId: 'strategy-3',
-    rangeStart: 45,
-    rangeEnd: 89,
-    leafHashes: ['0x1a2b3c...', '0x4d5e6f...', '0x7a8b9c...'],
-    boundarySiblings: ['0xd0e1f2...', '0xa3b4c5...'],
-    docRoot: '0xae72f9c8...d4b1e3f7',
+    disclosedLines: [
+      "This is line 2 containing some data.",
+      "This is line 3 with public info.",
+      "This is line 4 - shared section ends here."
+    ],
+    proofPackage: {
+      original_root: "<hex merkle root>",
+      total_leaves: 16,
+      range_start: 2,
+      range_end: 4,
+      salts: ["<hex salt for line 2>", "<hex salt for line 3>", "<hex salt for line 4>"],
+      multi_proof: "<hex encoded proof bytes>"
+    }
   }, null, 2);
 
   return (
@@ -34,49 +57,37 @@ export default function Verify() {
         <div className="verify-header fade-in" id="verify-header">
           <h1 className="heading-lg">Verify a Proof</h1>
           <p className="text-body">
-            Independently verify any Merkle inclusion proof. Paste the proof bundle and the on-chain Merkle root — verification runs entirely in your browser via Rust WASM.
+            Independently verify any Merkle inclusion proof. Paste the disclosure bundle containing the disclosed lines and proof package.
           </p>
         </div>
 
         <div className="verify-layout">
           <div className="verify-form card fade-in stagger-1" id="verify-form">
             <div className="publish-field">
-              <label className="text-xs">On-Chain Merkle Root</label>
-              <input
-                type="text"
-                className="input text-mono"
-                placeholder="0xae72f9c8...d4b1e3f7"
-                value={merkleRoot}
-                onChange={(e) => setMerkleRoot(e.target.value)}
-                id="verify-root-input"
-              />
-              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                The root hash from the Anchor Contract on Sepolia
-              </span>
-            </div>
-
-            <div className="publish-field">
-              <label className="text-xs">Proof Bundle (JSON)</label>
+              <label className="text-xs">Disclosure Bundle (JSON)</label>
               <textarea
                 className="input verify-textarea text-mono"
                 placeholder={sampleProof}
                 value={proofJson}
                 onChange={(e) => setProofJson(e.target.value)}
-                rows={12}
+                rows={16}
                 id="verify-proof-input"
               />
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                Must contain "disclosedLines" (string array) and "proofPackage" (with original_root, total_leaves, range_start, range_end, salts, multi_proof)
+              </span>
             </div>
 
             <button
               className={`btn btn-primary btn-lg ${isVerifying ? 'btn-loading' : ''}`}
               onClick={handleVerify}
-              disabled={!merkleRoot || !proofJson || isVerifying}
+              disabled={!proofJson || isVerifying}
               id="verify-btn"
             >
               {isVerifying ? (
                 <>
                   <span className="spinner" />
-                  Running WASM verify_proof...
+                  Verifying via WASM engine...
                 </>
               ) : (
                 <>
@@ -99,15 +110,14 @@ export default function Verify() {
                         <circle cx="12" cy="12" r="10" strokeWidth="1.5"/>
                       </svg>
                     </div>
-                    <h3 className="heading-sm" style={{ color: 'var(--success)' }}>Proof Valid ✓</h3>
-                    <p className="text-sm">
-                      The disclosed lines are cryptographically verified as part of the original document. 
-                      The recomputed root matches the on-chain anchor — the content is genuine and untampered.
-                    </p>
-                    <div className="verify-detail-row">
-                      <span className="text-xs">Recomputed Root</span>
-                      <code className="sidebar-hash text-mono">{merkleRoot}</code>
-                    </div>
+                    <h3 className="heading-sm" style={{ color: 'var(--success)' }}>Proof Valid</h3>
+                    <p className="text-sm">{resultMessage}</p>
+                    {parsedRoot && (
+                      <div className="verify-detail-row">
+                        <span className="text-xs">Merkle Root</span>
+                        <code className="sidebar-hash text-mono">{parsedRoot}</code>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>
@@ -117,11 +127,8 @@ export default function Verify() {
                         <path d="M15 9l-6 6M9 9l6 6" strokeLinecap="round"/>
                       </svg>
                     </div>
-                    <h3 className="heading-sm" style={{ color: 'var(--error)' }}>Proof Invalid ✗</h3>
-                    <p className="text-sm">
-                      The recomputed root does not match the provided on-chain root. The proof is invalid — 
-                      the content may have been tampered with or the proof is malformed.
-                    </p>
+                    <h3 className="heading-sm" style={{ color: 'var(--error)' }}>Proof Invalid</h3>
+                    <p className="text-sm">{resultMessage}</p>
                   </>
                 )}
               </div>
@@ -135,7 +142,7 @@ export default function Verify() {
               <div className="verify-steps-list">
                 <div className="verify-step-item">
                   <span className="verify-step-num">1</span>
-                  <span className="text-sm">Hash each disclosed line with SHA256 to produce leaf hashes</span>
+                  <span className="text-sm">Hash each disclosed line with its salt using domain-separated SHA-256</span>
                 </div>
                 <div className="verify-step-item">
                   <span className="verify-step-num">2</span>
@@ -143,11 +150,11 @@ export default function Verify() {
                 </div>
                 <div className="verify-step-item">
                   <span className="verify-step-num">3</span>
-                  <span className="text-sm">Combine with boundary sibling hashes at each tree level</span>
+                  <span className="text-sm">Combine with sibling hashes from the multi-proof</span>
                 </div>
                 <div className="verify-step-item">
                   <span className="verify-step-num">4</span>
-                  <span className="text-sm">Compute root and compare to on-chain anchored root</span>
+                  <span className="text-sm">Compute root and compare to the original_root in the proof package</span>
                 </div>
               </div>
             </div>
@@ -156,7 +163,7 @@ export default function Verify() {
               <h4 className="heading-sm">Technical Details</h4>
               <div className="sidebar-field">
                 <span className="text-xs">Hash Function</span>
-                <span className="text-sm">SHA-256</span>
+                <span className="text-sm">SHA-256 (domain-separated)</span>
               </div>
               <div className="sidebar-field">
                 <span className="text-xs">Proof Type</span>
@@ -164,7 +171,7 @@ export default function Verify() {
               </div>
               <div className="sidebar-field">
                 <span className="text-xs">Execution</span>
-                <span className="text-sm">Rust → WASM (in-browser)</span>
+                <span className="text-sm">Rust WASM (server-side)</span>
               </div>
               <div className="sidebar-field">
                 <span className="text-xs">Proof Complexity</span>
@@ -174,13 +181,10 @@ export default function Verify() {
 
             <button
               className="btn btn-secondary"
-              onClick={() => {
-                setProofJson(sampleProof);
-                setMerkleRoot('0xae72f9c8...d4b1e3f7');
-              }}
+              onClick={() => setProofJson(sampleProof)}
               id="load-sample-btn"
             >
-              Load Sample Proof
+              Load Sample Format
             </button>
           </aside>
         </div>

@@ -185,7 +185,7 @@ export default function Landing() {
                 </svg>
               </div>
               <h3>Fileverse Integration</h3>
-              <p>End-to-end encrypted documents on IPFS. Content extracted from ProseMirror DOM after client-side decryption — no keys leaked.</p>
+              <p>End-to-end encrypted documents on IPFS. Hosts run the Fileverse MCP backend — the original document never leaves the host server.</p>
             </div>
 
             <div className="feature-card card fade-in stagger-5" id="feature-onchain">
