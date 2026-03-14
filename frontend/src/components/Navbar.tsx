@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useWallet } from '../context/WalletContext';
 import './Navbar.css';
 
 export default function Navbar() {
   const location = useLocation();
-  const [walletConnected, setWalletConnected] = useState(false);
+  const { address, ensName, isConnected, isConnecting, connect, disconnect } = useWallet();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navLinks = [
@@ -26,7 +27,7 @@ export default function Navbar() {
               <path d="M12 9h6M12 13h4" stroke="var(--accent-violet)" strokeWidth="1.5" strokeLinecap="round"/>
             </svg>
           </div>
-          <span className="logo-text">DocShare</span>
+          <span className="logo-text">DisseK</span>
         </Link>
 
         <div className={`navbar-links ${mobileMenuOpen ? 'open' : ''}`}>
@@ -45,12 +46,17 @@ export default function Navbar() {
 
         <div className="navbar-actions">
           <button
-            className={`wallet-btn ${walletConnected ? 'connected' : ''}`}
-            onClick={() => setWalletConnected(!walletConnected)}
+            className={`wallet-btn ${isConnected ? 'connected' : ''} ${isConnecting ? 'btn-loading' : ''}`}
+            onClick={isConnected ? disconnect : connect}
+            disabled={isConnecting}
             id="connect-wallet-btn"
           >
             <span className="wallet-dot" />
-            {walletConnected ? '0x1a2b...3c4d' : 'Connect Wallet'}
+            {isConnecting
+              ? 'Signing in...'
+              : isConnected
+                ? ensName || `${address!.slice(0, 6)}...${address!.slice(-4)}`
+                : 'Connect Wallet'}
           </button>
 
           <button

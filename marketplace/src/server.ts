@@ -25,8 +25,8 @@ const PORT = process.env.MARKETPLACE_PORT || 3002;
  * A document owner registers their host backend so the marketplace
  * can forward purchase requests to it.
  */
-app.post("/api/hosts", (req, res) => {
-  const { name, backendUrl, description, trustModel, institution } = req.body;
+app.post("/api/hosts", async (req, res) => {
+  const { name, backendUrl, description, trustModel, institution, signerAddress, ensName } = req.body;
 
   if (!name || !backendUrl || !trustModel) {
     res
@@ -43,10 +43,12 @@ app.post("/api/hosts", (req, res) => {
     trustModel,
     institution: institution || undefined,
     reputation: trustModel === "institution" ? 90 : 50,
+    signerAddress: signerAddress || undefined,
+    ensName: ensName || undefined,
     registeredAt: new Date().toISOString(),
   };
 
-  store.addHost(host);
+  await store.addHost(host);
   console.log(`Host registered: ${host.name} (${host.id}) → ${host.backendUrl}`);
   res.status(201).json(host);
 });
@@ -54,15 +56,15 @@ app.post("/api/hosts", (req, res) => {
 /**
  * GET /api/hosts
  */
-app.get("/api/hosts", (_req, res) => {
-  res.json(store.getAllHosts());
+app.get("/api/hosts", async (_req, res) => {
+  res.json(await store.getAllHosts());
 });
 
 /**
  * GET /api/hosts/:id
  */
-app.get("/api/hosts/:id", (req, res) => {
-  const host = store.getHost(req.params.id);
+app.get("/api/hosts/:id", async (req, res) => {
+  const host = await store.getHost(req.params.id);
   if (!host) {
     res.status(404).json({ error: "Host not found" });
     return;
@@ -81,7 +83,7 @@ app.get("/api/hosts/:id", (req, res) => {
  * the actual document content — only metadata, section definitions,
  * and the on-chain Merkle root.
  */
-app.post("/api/documents", (req, res) => {
+app.post("/api/documents", async (req, res) => {
   const {
     hostId,
     ddocId,
@@ -93,16 +95,18 @@ app.post("/api/documents", (req, res) => {
     anchorTx,
     anchorChain,
     sections,
+    sellLineByLine,
+    pricePerLine,
   } = req.body;
 
-  if (!hostId || !title || !merkleRoot || !sections?.length) {
+  if (!hostId || !title || !merkleRoot) {
     res.status(400).json({
-      error: "Required: hostId, title, merkleRoot, sections (non-empty)",
+      error: "Required: hostId, title, merkleRoot",
     });
     return;
   }
 
-  const host = store.getHost(hostId);
+  const host = await store.getHost(hostId);
   if (!host) {
     res.status(404).json({ error: "Host not found. Register first." });
     return;
@@ -131,10 +135,12 @@ app.post("/api/documents", (req, res) => {
     anchorTx: anchorTx || "",
     anchorChain: anchorChain || "sepolia",
     sections: sectionListings,
+    sellLineByLine: sellLineByLine ?? false,
+    pricePerLine: pricePerLine ?? 0,
     createdAt: new Date().toISOString(),
   };
 
-  store.addDocument(doc);
+  await store.addDocument(doc);
   console.log(`Document listed: "${doc.title}" (${doc.id}) by host ${host.name}`);
   res.status(201).json(doc);
 });
@@ -143,14 +149,14 @@ app.post("/api/documents", (req, res) => {
  * GET /api/documents
  * Query: ?q=search&tag=DeFi
  */
-app.get("/api/documents", (req, res) => {
+app.get("/api/documents", async (req, res) => {
   const q = (req.query.q as string) || "";
   const tag = (req.query.tag as string) || undefined;
-  const docs = store.searchDocuments(q, tag);
+  const docs = await store.searchDocuments(q, tag);
 
   // Enrich with host info
-  const enriched = docs.map((doc) => {
-    const host = store.getHost(doc.hostId);
+  const enriched = await Promise.all(docs.map(async (doc) => {
+    const host = await store.getHost(doc.hostId);
     return {
       ...doc,
       host: host
@@ -160,10 +166,12 @@ app.get("/api/documents", (req, res) => {
             trustModel: host.trustModel,
             institution: host.institution,
             reputation: host.reputation,
+            signerAddress: host.signerAddress,
+            ensName: host.ensName,
           }
         : null,
     };
-  });
+  }));
 
   res.json({ documents: enriched, total: enriched.length });
 });
@@ -171,14 +179,14 @@ app.get("/api/documents", (req, res) => {
 /**
  * GET /api/documents/:id
  */
-app.get("/api/documents/:id", (req, res) => {
-  const doc = store.getDocument(req.params.id);
+app.get("/api/documents/:id", async (req, res) => {
+  const doc = await store.getDocument(req.params.id);
   if (!doc) {
     res.status(404).json({ error: "Document not found" });
     return;
   }
 
-  const host = store.getHost(doc.hostId);
+  const host = await store.getHost(doc.hostId);
   res.json({
     ...doc,
     host: host
@@ -188,6 +196,8 @@ app.get("/api/documents/:id", (req, res) => {
           trustModel: host.trustModel,
           institution: host.institution,
           reputation: host.reputation,
+          signerAddress: host.signerAddress,
+          ensName: host.ensName,
         }
       : null,
   });
@@ -197,29 +207,22 @@ app.get("/api/documents/:id", (req, res) => {
 
 /**
  * POST /api/documents/:id/purchase
- * Body: { sectionId, buyerAddress }
+ * Body: { sectionId?, lineStart?, lineEnd?, buyerAddress }
  *
- * 1. Validate the section exists and calculate cost
- * 2. (In production: verify on-chain payment)
- * 3. Forward disclosure request to the host's backend
- * 4. Return disclosed lines + proof package to the buyer
+ * Two modes:
+ *   a) sectionId provided → use predefined section ranges
+ *   b) lineStart + lineEnd provided → line-by-line purchase (requires sellLineByLine)
  *
  * The marketplace NEVER sees the original document.
  * It only relays the disclosure request to the host.
  */
 app.post("/api/documents/:id/purchase", async (req, res) => {
   try {
-    const { sectionId, buyerAddress } = req.body;
-    const doc = store.getDocument(req.params.id);
+    const { sectionId, lineStart: reqLineStart, lineEnd: reqLineEnd, buyerAddress } = req.body;
+    const doc = await store.getDocument(req.params.id);
 
     if (!doc) {
       res.status(404).json({ error: "Document not found" });
-      return;
-    }
-
-    const section = doc.sections.find((s) => s.id === sectionId);
-    if (!section) {
-      res.status(404).json({ error: "Section not found" });
       return;
     }
 
@@ -228,17 +231,55 @@ app.post("/api/documents/:id/purchase", async (req, res) => {
       return;
     }
 
-    const lineCount = section.lineEnd - section.lineStart + 1;
-    const totalCost = lineCount * section.pricePerLine;
+    let lineStart: number;
+    let lineEnd: number;
+    let costPerLine: number;
+    let sectionName: string;
+    let resolvedSectionId: string;
+
+    if (sectionId) {
+      // Mode A: section-based purchase
+      const section = doc.sections.find((s) => s.id === sectionId);
+      if (!section) {
+        res.status(404).json({ error: "Section not found" });
+        return;
+      }
+      lineStart = section.lineStart;
+      lineEnd = section.lineEnd;
+      costPerLine = section.pricePerLine;
+      sectionName = section.name;
+      resolvedSectionId = section.id;
+    } else if (reqLineStart != null && reqLineEnd != null) {
+      // Mode B: line-by-line purchase
+      if (!doc.sellLineByLine) {
+        res.status(400).json({ error: "This document does not support line-by-line purchases" });
+        return;
+      }
+      lineStart = reqLineStart;
+      lineEnd = reqLineEnd;
+      if (lineStart < 0 || lineEnd >= doc.totalLines || lineStart > lineEnd) {
+        res.status(400).json({ error: `Invalid line range. Document has ${doc.totalLines} lines (0-${doc.totalLines - 1})` });
+        return;
+      }
+      costPerLine = doc.pricePerLine;
+      sectionName = `Lines ${lineStart}–${lineEnd}`;
+      resolvedSectionId = `custom-${lineStart}-${lineEnd}`;
+    } else {
+      res.status(400).json({ error: "Provide either sectionId or lineStart+lineEnd" });
+      return;
+    }
+
+    const lineCount = lineEnd - lineStart + 1;
+    const totalCost = lineCount * costPerLine;
 
     // Create purchase record
     const purchase: Purchase = {
       id: uuidv4(),
       documentId: doc.id,
-      sectionId: section.id,
+      sectionId: resolvedSectionId,
       buyerAddress,
-      lineStart: section.lineStart,
-      lineEnd: section.lineEnd,
+      lineStart,
+      lineEnd,
       totalCost,
       disclosedLines: [],
       proofPackage: null,
@@ -246,16 +287,16 @@ app.post("/api/documents/:id/purchase", async (req, res) => {
       purchasedAt: new Date().toISOString(),
       fulfilledAt: null,
     };
-    store.addPurchase(purchase);
+    await store.addPurchase(purchase);
 
     console.log(
-      `Purchase ${purchase.id}: buyer ${buyerAddress} → "${doc.title}" lines ${section.lineStart}-${section.lineEnd} ($${totalCost})`
+      `Purchase ${purchase.id}: buyer ${buyerAddress} → "${doc.title}" lines ${lineStart}-${lineEnd} ($${totalCost})`
     );
 
     // Forward to host backend
-    const host = store.getHost(doc.hostId);
+    const host = await store.getHost(doc.hostId);
     if (!host) {
-      store.updatePurchase(purchase.id, { status: "failed" });
+      await store.updatePurchase(purchase.id, { status: "failed" });
       res.status(500).json({ error: "Host not found for this document" });
       return;
     }
@@ -269,15 +310,15 @@ app.post("/api/documents/:id/purchase", async (req, res) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ddocId: doc.ddocId,
-        startLine: section.lineStart,
-        endLine: section.lineEnd,
+        startLine: lineStart,
+        endLine: lineEnd,
       }),
     });
 
     if (!hostResponse.ok) {
       const err = await hostResponse.text();
       console.error(`Host disclosure failed: ${err}`);
-      store.updatePurchase(purchase.id, { status: "failed" });
+      await store.updatePurchase(purchase.id, { status: "failed" });
       res.status(502).json({ error: "Host failed to generate disclosure" });
       return;
     }
@@ -285,7 +326,7 @@ app.post("/api/documents/:id/purchase", async (req, res) => {
     const hostData = await hostResponse.json();
 
     // Update purchase with disclosure data
-    store.updatePurchase(purchase.id, {
+    await store.updatePurchase(purchase.id, {
       status: "fulfilled",
       disclosedLines: hostData.disclosedLines || [],
       proofPackage: hostData.proofPackage || null,
@@ -298,9 +339,9 @@ app.post("/api/documents/:id/purchase", async (req, res) => {
       success: true,
       purchaseId: purchase.id,
       documentTitle: doc.title,
-      sectionName: section.name,
-      lineStart: section.lineStart,
-      lineEnd: section.lineEnd,
+      sectionName,
+      lineStart,
+      lineEnd,
       totalCost,
       disclosureDocId: hostData.disclosureDocId || null,
       disclosureLink: hostData.disclosureLink || null,
@@ -320,8 +361,8 @@ app.post("/api/documents/:id/purchase", async (req, res) => {
 /**
  * GET /api/purchases/:id
  */
-app.get("/api/purchases/:id", (req, res) => {
-  const purchase = store.getPurchase(req.params.id);
+app.get("/api/purchases/:id", async (req, res) => {
+  const purchase = await store.getPurchase(req.params.id);
   if (!purchase) {
     res.status(404).json({ error: "Purchase not found" });
     return;
@@ -332,13 +373,13 @@ app.get("/api/purchases/:id", (req, res) => {
 /**
  * GET /api/purchases?buyer=0x...
  */
-app.get("/api/purchases", (req, res) => {
+app.get("/api/purchases", async (req, res) => {
   const buyer = req.query.buyer as string;
   if (!buyer) {
     res.status(400).json({ error: "buyer query param required" });
     return;
   }
-  res.json(store.getPurchasesByBuyer(buyer));
+  res.json(await store.getPurchasesByBuyer(buyer));
 });
 
 // ─── Verification (convenience proxy) ────────────────────────────────
@@ -365,16 +406,16 @@ app.post("/api/verify", async (req, res) => {
     let hostUrl: string | null = null;
 
     if (documentId) {
-      const doc = store.getDocument(documentId);
+      const doc = await store.getDocument(documentId);
       if (doc) {
-        const host = store.getHost(doc.hostId);
+        const host = await store.getHost(doc.hostId);
         if (host) hostUrl = host.backendUrl;
       }
     }
 
     // Fallback: use first registered host
     if (!hostUrl) {
-      const hosts = store.getAllHosts();
+      const hosts = await store.getAllHosts();
       if (hosts.length > 0) hostUrl = hosts[0]!.backendUrl;
     }
 
@@ -401,12 +442,14 @@ app.post("/api/verify", async (req, res) => {
 
 // ─── Health ──────────────────────────────────────────────────────────
 
-app.get("/api/health", (_req, res) => {
+app.get("/api/health", async (_req, res) => {
+  const hosts = await store.getAllHosts();
+  const documents = await store.getAllDocuments();
   res.json({
     status: "ok",
     engine: "DisseK Marketplace",
-    hosts: store.getAllHosts().length,
-    documents: store.getAllDocuments().length,
+    hosts: hosts.length,
+    documents: documents.length,
   });
 });
 

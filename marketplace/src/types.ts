@@ -6,6 +6,8 @@ export interface Host {
   trustModel: "reputation" | "institution";
   institution?: string; // e.g. "Johns Hopkins Hospital", "Delphi Digital"
   reputation: number; // 0-100 score
+  signerAddress?: string; // Ethereum address (from SIWE)
+  ensName?: string; // ENS name if available
   registeredAt: string;
 }
 
@@ -30,6 +32,8 @@ export interface DocumentListing {
   anchorTx: string; // transaction hash
   anchorChain: string; // e.g. "sepolia"
   sections: SectionListing[];
+  sellLineByLine: boolean; // if true, buyers can pick any line range
+  pricePerLine: number; // default per-line price when selling line-by-line
   createdAt: string;
 }
 

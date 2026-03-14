@@ -36,18 +36,18 @@ export default function Landing() {
 
           <div className="hero-stats fade-in stagger-4">
             <div className="hero-stat">
-              <span className="hero-stat-value">127</span>
-              <span className="hero-stat-label">Documents</span>
+              <span className="hero-stat-value">SHA-256</span>
+              <span className="hero-stat-label">Merkle Proofs</span>
             </div>
             <div className="hero-stat-divider" />
             <div className="hero-stat">
-              <span className="hero-stat-value">3,400+</span>
-              <span className="hero-stat-label">Sections Sold</span>
+              <span className="hero-stat-value">WASM</span>
+              <span className="hero-stat-label">Rust Verification</span>
             </div>
             <div className="hero-stat-divider" />
             <div className="hero-stat">
-              <span className="hero-stat-value">$12.4k</span>
-              <span className="hero-stat-label">Revenue Generated</span>
+              <span className="hero-stat-value">SIWE</span>
+              <span className="hero-stat-label">Ethereum Identity</span>
             </div>
           </div>
         </div>
@@ -95,9 +95,9 @@ export default function Landing() {
                   <path d="M12 6v6l4 2" strokeLinecap="round"/>
                 </svg>
               </div>
-              <h3 className="heading-sm">Purchase via x402</h3>
+              <h3 className="heading-sm">Purchase Sections</h3>
               <p className="text-sm">
-                Browse sections and pay with autonomous micropayments. AI agents pay via x402 protocol — no human intervention needed. ENS identity verifies namespace access.
+                Browse sections and buy specific line ranges. Sign in with Ethereum for identity. Each purchase triggers selective disclosure from the host backend.
               </p>
             </div>
 
@@ -162,8 +162,8 @@ export default function Landing() {
                   <path d="M5 20c0-3.866 3.134-7 7-7s7 3.134 7 7" strokeLinecap="round"/>
                 </svg>
               </div>
-              <h3>ENSIP-25 Identity</h3>
-              <p>AI agents prove organisational membership via ENS reverse lookup. Grant access to entire namespaces — not individual addresses.</p>
+              <h3>Sign-In with Ethereum</h3>
+              <p>Hosts authenticate via SIWE. Reputation-based hosts display their ENS name. Institutional hosts store their signer public key for verification.</p>
             </div>
 
             <div className="feature-card card fade-in stagger-4" id="feature-x402">
@@ -173,8 +173,8 @@ export default function Landing() {
                   <circle cx="12" cy="12" r="4"/>
                 </svg>
               </div>
-              <h3>x402 Protocol</h3>
-              <p>Machine-readable HTTP micropayments. HTTP 402 → pay → retry → content. Fully autonomous for AI agents, wallet popup for humans.</p>
+              <h3>Line-by-Line Sales</h3>
+              <p>Hosts can enable granular line-by-line purchasing. Buyers pick any line range — not just predefined sections. Pay only for what you need.</p>
             </div>
 
             <div className="feature-card card fade-in stagger-5" id="feature-fileverse">

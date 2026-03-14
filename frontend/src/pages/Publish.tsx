@@ -8,6 +8,7 @@ import {
   buildMerkleTree,
   type FileverseDoc,
 } from '../api/marketplace';
+import { useWallet } from '../context/WalletContext';
 import './Publish.css';
 
 interface SectionDef {
@@ -25,6 +26,7 @@ interface FvDocSummary {
 }
 
 export default function Publish() {
+  const { address: walletAddress, ensName: walletEnsName, isConnected: walletConnected } = useWallet();
   const [step, setStep] = useState(1);
 
   // Step 1: Host info + connect
@@ -46,6 +48,8 @@ export default function Publish() {
   // Step 2: Document metadata + sections
   const [docDescription, setDocDescription] = useState('');
   const [docTags, setDocTags] = useState('');
+  const [sellLineByLine, setSellLineByLine] = useState(false);
+  const [lineByLinePrice, setLineByLinePrice] = useState('1');
   const [sections, setSections] = useState<SectionDef[]>([
     { name: '', lineStart: '', lineEnd: '', pricePerLine: '1', description: '' },
   ]);
@@ -147,6 +151,8 @@ export default function Publish() {
         description: hostDescription,
         trustModel,
         institution: trustModel === 'institution' ? institution : undefined,
+        signerAddress: walletAddress || undefined,
+        ensName: walletEnsName || undefined,
       });
       setHostId(host.id);
 
@@ -160,6 +166,8 @@ export default function Publish() {
         merkleRoot,
         anchorTx: '',
         anchorChain: 'sepolia',
+        sellLineByLine,
+        pricePerLine: parseFloat(lineByLinePrice) || 0,
         sections: sections
           .filter((s) => s.name)
           .map((s) => ({
@@ -182,6 +190,17 @@ export default function Publish() {
   return (
     <div className="publish-page">
       <div className="container">
+        {!walletConnected && (
+          <div className="card fade-in" style={{ marginBottom: '1.5rem', padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.75rem', borderLeft: '3px solid var(--accent-violet)' }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-violet)" strokeWidth="2">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <span className="text-sm">Connect your wallet via the navbar to sign in with Ethereum. Your ENS name and address will be linked to your host profile.</span>
+          </div>
+        )}
+
         <div className="publish-header fade-in" id="publish-header">
           <h1 className="heading-lg">Publish a Document</h1>
           <p className="text-body">You host a Fileverse instance and the DisseK Merkle engine. Connect your backend, select a document, define sections, and list it on the marketplace.</p>
@@ -468,6 +487,40 @@ export default function Publish() {
                   )}
                 </div>
               </div>
+
+              <div className="publish-field" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '1rem', background: 'var(--bg-secondary)', borderRadius: '0.5rem', border: '1px solid var(--border)' }}>
+                <input
+                  type="checkbox"
+                  id="sell-line-by-line"
+                  checked={sellLineByLine}
+                  onChange={(e) => setSellLineByLine(e.target.checked)}
+                  style={{ width: '18px', height: '18px', accentColor: 'var(--accent-violet)' }}
+                />
+                <div>
+                  <label htmlFor="sell-line-by-line" className="text-sm" style={{ fontWeight: 600, cursor: 'pointer' }}>
+                    Allow line-by-line purchases
+                  </label>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                    Buyers can select any line range they want, not just the predefined sections below.
+                  </p>
+                </div>
+              </div>
+
+              {sellLineByLine && (
+                <div className="publish-field">
+                  <label className="text-xs">Default Price Per Line (USD)</label>
+                  <input
+                    className="input"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="1.00"
+                    value={lineByLinePrice}
+                    onChange={(e) => setLineByLinePrice(e.target.value)}
+                    style={{ maxWidth: '200px' }}
+                  />
+                </div>
+              )}
 
               <div className="sections-editor" id="sections-editor">
                 {sections.map((sec, idx) => (

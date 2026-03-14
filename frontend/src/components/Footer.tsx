@@ -12,7 +12,7 @@ export default function Footer() {
                 <rect x="2" y="3" width="14" height="18" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none"/>
                 <rect x="8" y="3" width="14" height="18" rx="2" stroke="var(--accent-violet)" strokeWidth="1.5" fill="rgba(139,92,246,0.1)"/>
               </svg>
-              <span>DocShare</span>
+              <span>DisseK</span>
             </Link>
             <p className="footer-tagline">
               Sell knowledge, not documents. Cryptographic proof of authenticity for every section.
@@ -35,8 +35,8 @@ export default function Footer() {
             <div className="footer-col">
               <h4>Built With</h4>
               <span className="footer-tech">Rust + WASM</span>
-              <span className="footer-tech">ENSIP-25</span>
-              <span className="footer-tech">x402 Protocol</span>
+              <span className="footer-tech">SIWE + ENS</span>
+              <span className="footer-tech">Firebase</span>
             </div>
           </div>
         </div>

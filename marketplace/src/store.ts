@@ -1,50 +1,98 @@
 /**
- * In-memory data store for the marketplace.
- * Resets on restart — fine for hackathon demo.
+ * Marketplace data store.
+ * Tries Firestore for persistence. Falls back to in-memory if unavailable.
  */
 
+import { db } from "./firebase.js";
 import type { Host, DocumentListing, Purchase } from "./types.js";
 
+let useFirestore = !!db;
+let firestoreVerified = false;
+
+async function ensureFirestore(): Promise<boolean> {
+  if (!db) return false;
+  if (firestoreVerified) return useFirestore;
+  try {
+    await db.collection("_ping").limit(1).get();
+    firestoreVerified = true;
+    useFirestore = true;
+    console.log("[Store] Firestore connection verified ✓");
+    return true;
+  } catch (err: any) {
+    firestoreVerified = true;
+    useFirestore = false;
+    console.warn(`[Store] Firestore unavailable: ${err.message}. Falling back to in-memory.`);
+    return false;
+  }
+}
+
 class Store {
-  hosts: Map<string, Host> = new Map();
-  documents: Map<string, DocumentListing> = new Map();
-  purchases: Map<string, Purchase> = new Map();
+  private hosts: Map<string, Host> = new Map();
+  private documents: Map<string, DocumentListing> = new Map();
+  private purchases: Map<string, Purchase> = new Map();
 
   // --- Hosts ---
 
-  addHost(host: Host): void {
+  async addHost(host: Host): Promise<void> {
     this.hosts.set(host.id, host);
+    if (await ensureFirestore()) {
+      await db!.collection("hosts").doc(host.id).set(host);
+    }
   }
 
-  getHost(id: string): Host | undefined {
+  async getHost(id: string): Promise<Host | undefined> {
+    if (await ensureFirestore()) {
+      const snap = await db!.collection("hosts").doc(id).get();
+      return snap.exists ? (snap.data() as Host) : undefined;
+    }
     return this.hosts.get(id);
   }
 
-  getAllHosts(): Host[] {
+  async getAllHosts(): Promise<Host[]> {
+    if (await ensureFirestore()) {
+      const snap = await db!.collection("hosts").get();
+      return snap.docs.map((d) => d.data() as Host);
+    }
     return Array.from(this.hosts.values());
   }
 
   // --- Documents ---
 
-  addDocument(doc: DocumentListing): void {
+  async addDocument(doc: DocumentListing): Promise<void> {
     this.documents.set(doc.id, doc);
+    if (await ensureFirestore()) {
+      await db!.collection("documents").doc(doc.id).set(doc);
+    }
   }
 
-  getDocument(id: string): DocumentListing | undefined {
+  async getDocument(id: string): Promise<DocumentListing | undefined> {
+    if (await ensureFirestore()) {
+      const snap = await db!.collection("documents").doc(id).get();
+      return snap.exists ? (snap.data() as DocumentListing) : undefined;
+    }
     return this.documents.get(id);
   }
 
-  getAllDocuments(): DocumentListing[] {
+  async getAllDocuments(): Promise<DocumentListing[]> {
+    if (await ensureFirestore()) {
+      const snap = await db!.collection("documents").get();
+      return snap.docs.map((d) => d.data() as DocumentListing);
+    }
     return Array.from(this.documents.values());
   }
 
-  getDocumentsByHost(hostId: string): DocumentListing[] {
-    return this.getAllDocuments().filter((d) => d.hostId === hostId);
+  async getDocumentsByHost(hostId: string): Promise<DocumentListing[]> {
+    if (await ensureFirestore()) {
+      const snap = await db!.collection("documents").where("hostId", "==", hostId).get();
+      return snap.docs.map((d) => d.data() as DocumentListing);
+    }
+    return Array.from(this.documents.values()).filter((d) => d.hostId === hostId);
   }
 
-  searchDocuments(query: string, tag?: string): DocumentListing[] {
+  async searchDocuments(query: string, tag?: string): Promise<DocumentListing[]> {
+    const all = await this.getAllDocuments();
     const q = query.toLowerCase();
-    return this.getAllDocuments().filter((doc) => {
+    return all.filter((doc) => {
       const matchesQuery =
         !q ||
         doc.title.toLowerCase().includes(q) ||
@@ -56,22 +104,38 @@ class Store {
 
   // --- Purchases ---
 
-  addPurchase(purchase: Purchase): void {
+  async addPurchase(purchase: Purchase): Promise<void> {
     this.purchases.set(purchase.id, purchase);
+    if (await ensureFirestore()) {
+      await db!.collection("purchases").doc(purchase.id).set(purchase);
+    }
   }
 
-  getPurchase(id: string): Purchase | undefined {
+  async getPurchase(id: string): Promise<Purchase | undefined> {
+    if (await ensureFirestore()) {
+      const snap = await db!.collection("purchases").doc(id).get();
+      return snap.exists ? (snap.data() as Purchase) : undefined;
+    }
     return this.purchases.get(id);
   }
 
-  updatePurchase(id: string, updates: Partial<Purchase>): void {
+  async updatePurchase(id: string, updates: Partial<Purchase>): Promise<void> {
+    if (await ensureFirestore()) {
+      await db!.collection("purchases").doc(id).update(updates);
+    }
     const p = this.purchases.get(id);
     if (p) {
       this.purchases.set(id, { ...p, ...updates });
     }
   }
 
-  getPurchasesByBuyer(buyerAddress: string): Purchase[] {
+  async getPurchasesByBuyer(buyerAddress: string): Promise<Purchase[]> {
+    if (await ensureFirestore()) {
+      const snap = await db!.collection("purchases")
+        .where("buyerAddress", "==", buyerAddress)
+        .get();
+      return snap.docs.map((d) => d.data() as Purchase);
+    }
     return Array.from(this.purchases.values()).filter(
       (p) => p.buyerAddress === buyerAddress
     );

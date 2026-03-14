@@ -15,6 +15,8 @@ export interface Host {
   trustModel: "reputation" | "institution";
   institution?: string;
   reputation: number;
+  signerAddress?: string;
+  ensName?: string;
   registeredAt: string;
 }
 
@@ -39,6 +41,8 @@ export interface DocumentListing {
   anchorTx: string;
   anchorChain: string;
   sections: SectionListing[];
+  sellLineByLine: boolean;
+  pricePerLine: number;
   createdAt: string;
   host: {
     id: string;
@@ -46,6 +50,8 @@ export interface DocumentListing {
     trustModel: string;
     institution?: string;
     reputation: number;
+    signerAddress?: string;
+    ensName?: string;
   } | null;
 }
 
@@ -100,6 +106,8 @@ export function registerHost(data: {
   description: string;
   trustModel: "reputation" | "institution";
   institution?: string;
+  signerAddress?: string;
+  ensName?: string;
 }): Promise<Host> {
   return fetchJson("/api/hosts", {
     method: "POST",
@@ -138,6 +146,8 @@ export function createDocumentListing(data: {
   merkleRoot: string;
   anchorTx: string;
   anchorChain: string;
+  sellLineByLine?: boolean;
+  pricePerLine?: number;
   sections: {
     name: string;
     lineStart: number;
@@ -154,6 +164,20 @@ export function createDocumentListing(data: {
 }
 
 // --- Purchase ---
+
+export function purchaseLines(
+  documentId: string,
+  lineStart: number,
+  lineEnd: number,
+  buyerAddress: string
+): Promise<PurchaseResult> {
+  return fetchJson(`/api/documents/${documentId}/purchase`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ lineStart, lineEnd, buyerAddress }),
+  });
+}
+
 
 export function purchaseSection(
   documentId: string,

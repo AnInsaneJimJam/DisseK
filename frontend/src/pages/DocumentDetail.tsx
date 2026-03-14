@@ -3,10 +3,12 @@ import { useParams, Link } from 'react-router-dom';
 import {
   getDocument,
   purchaseSection,
+  purchaseLines,
   verifyProof,
   type DocumentListing,
   type ProofPackage,
 } from '../api/marketplace';
+import { useWallet } from '../context/WalletContext';
 import './DocumentDetail.css';
 
 interface SectionPurchaseData {
@@ -17,6 +19,7 @@ interface SectionPurchaseData {
 
 export default function DocumentDetail() {
   const { id } = useParams<{ id: string }>();
+  const { address: walletAddress, isConnected: walletConnected } = useWallet();
   const [doc, setDoc] = useState<DocumentListing | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -26,6 +29,11 @@ export default function DocumentDetail() {
   const [verifyingSection, setVerifyingSection] = useState<string | null>(null);
   const [verifiedSections, setVerifiedSections] = useState<Set<string>>(new Set());
   const [verifyMessages, setVerifyMessages] = useState<Map<string, string>>(new Map());
+
+  // Line-by-line purchase state
+  const [customLineStart, setCustomLineStart] = useState('');
+  const [customLineEnd, setCustomLineEnd] = useState('');
+  const [isPurchasingCustom, setIsPurchasingCustom] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -68,7 +76,7 @@ export default function DocumentDetail() {
       const result = await purchaseSection(
         doc.id,
         sectionId,
-        '0xBuyerAddress' // In production: from wallet
+        walletAddress || '0xBuyerAddress'
       );
       if (result.proofPackage) {
         setPurchasedSections((prev) => {
@@ -85,6 +93,36 @@ export default function DocumentDetail() {
       alert(`Purchase failed: ${err.message}`);
     } finally {
       setPurchasingSection(null);
+    }
+  };
+
+  const handlePurchaseCustomLines = async () => {
+    if (!doc) return;
+    const start = parseInt(customLineStart);
+    const end = parseInt(customLineEnd);
+    if (isNaN(start) || isNaN(end) || start > end || start < 0 || end >= doc.totalLines) {
+      alert(`Invalid range. Enter lines 0–${doc.totalLines - 1}.`);
+      return;
+    }
+    const customKey = `custom-${start}-${end}`;
+    setIsPurchasingCustom(true);
+    try {
+      const result = await purchaseLines(doc.id, start, end, walletAddress || '0xBuyerAddress');
+      if (result.proofPackage) {
+        setPurchasedSections((prev) => {
+          const next = new Map(prev);
+          next.set(customKey, {
+            disclosedLines: result.disclosedLines || [],
+            proofPackage: result.proofPackage,
+            disclosureLink: result.disclosureLink,
+          });
+          return next;
+        });
+      }
+    } catch (err: any) {
+      alert(`Purchase failed: ${err.message}`);
+    } finally {
+      setIsPurchasingCustom(false);
     }
   };
 
@@ -140,9 +178,13 @@ export default function DocumentDetail() {
                   {hostName.charAt(0)}
                 </div>
                 <div>
-                  <span className="doc-detail-author-name">{hostName}</span>
+                  <span className="doc-detail-author-name">{doc.host?.ensName || hostName}</span>
                   <span className="doc-detail-author-addr text-mono">
-                    {doc.host?.trustModel === 'institution' ? doc.host.institution : `Reputation: ${doc.host?.reputation ?? 0}/100`}
+                    {doc.host?.signerAddress
+                      ? `${doc.host.signerAddress.slice(0, 6)}...${doc.host.signerAddress.slice(-4)}`
+                      : doc.host?.trustModel === 'institution'
+                        ? doc.host.institution
+                        : `Reputation: ${doc.host?.reputation ?? 0}/100`}
                   </span>
                 </div>
               </div>
@@ -177,6 +219,17 @@ export default function DocumentDetail() {
                 </span>
               </div>
             </div>
+
+            {!walletConnected && (
+              <div className="card fade-in" style={{ marginBottom: '1rem', padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', borderLeft: '3px solid var(--accent-violet)' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-violet)" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="12" y1="8" x2="12" y2="12"/>
+                  <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <span className="text-xs">Connect your wallet to purchase with your Ethereum address.</span>
+              </div>
+            )}
 
             {/* Sections */}
             <div className="doc-sections" id="doc-sections">
@@ -328,6 +381,129 @@ export default function DocumentDetail() {
                   );
                 })}
               </div>
+
+              {/* Line-by-line purchase */}
+              {doc.sellLineByLine && (
+                <div className="custom-line-purchase card fade-in" style={{ marginTop: '1.5rem' }}>
+                  <h3 className="heading-sm" style={{ marginBottom: '0.5rem' }}>Buy Any Lines</h3>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                    This document supports line-by-line purchases. Pick any range (0–{doc.totalLines - 1}) at ${doc.pricePerLine}/line.
+                  </p>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                    <div>
+                      <label className="text-xs">Start Line</label>
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        max={doc.totalLines - 1}
+                        placeholder="0"
+                        value={customLineStart}
+                        onChange={(e) => setCustomLineStart(e.target.value)}
+                        style={{ width: '100px' }}
+                      />
+                    </div>
+                    <span style={{ padding: '0.5rem 0', color: 'var(--text-muted)' }}>–</span>
+                    <div>
+                      <label className="text-xs">End Line</label>
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        max={doc.totalLines - 1}
+                        placeholder={String(doc.totalLines - 1)}
+                        value={customLineEnd}
+                        onChange={(e) => setCustomLineEnd(e.target.value)}
+                        style={{ width: '100px' }}
+                      />
+                    </div>
+                    <button
+                      className={`btn btn-primary btn-sm ${isPurchasingCustom ? 'btn-loading' : ''}`}
+                      onClick={handlePurchaseCustomLines}
+                      disabled={isPurchasingCustom || !customLineStart || !customLineEnd}
+                    >
+                      {isPurchasingCustom ? (
+                        <><span className="spinner" /> Purchasing...</>
+                      ) : (
+                        <>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                            <path d="M7 11V7a5 5 0 0110 0v4"/>
+                          </svg>
+                          Buy Lines
+                        </>
+                      )}
+                    </button>
+                    {customLineStart && customLineEnd && (
+                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        = ${((parseInt(customLineEnd) - parseInt(customLineStart) + 1) * doc.pricePerLine).toFixed(2)}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Show custom purchased ranges */}
+                  {Array.from(purchasedSections.entries())
+                    .filter(([key]) => key.startsWith('custom-'))
+                    .map(([key, data]) => {
+                      const match = key.match(/^custom-(\d+)-(\d+)$/);
+                      const cStart = match ? parseInt(match[1]) : 0;
+                      const cEnd = match ? parseInt(match[2]) : 0;
+                      const isVerified = verifiedSections.has(key);
+                      const isVerifying = verifyingSection === key;
+
+                      return (
+                        <div key={key} className={`section-item card ${isVerified ? 'verified' : 'purchased'}`} style={{ marginTop: '1rem' }}>
+                          <div className="section-item-header">
+                            <div className="section-item-info">
+                              <h3>Lines {cStart}–{cEnd}</h3>
+                              <span className="section-item-range text-mono text-xs">Custom range · {cEnd - cStart + 1} lines</span>
+                            </div>
+                          </div>
+                          <div className="section-item-content">
+                            <div className="section-content-box">
+                              <div className="section-content-label text-xs">
+                                Content Unlocked — {data.disclosedLines.length} lines with Merkle proof
+                              </div>
+                              <div className="extracted-lines" style={{ maxHeight: '200px', marginTop: '0.5rem' }}>
+                                {data.disclosedLines.map((line, i) => (
+                                  <div key={i} className="extracted-line">
+                                    <span className="line-num text-mono">{cStart + i}</span>
+                                    <span className="line-content text-sm">{line || <span style={{ color: 'var(--text-muted)' }}>(empty)</span>}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="section-item-actions">
+                            {!isVerified && (
+                              <button
+                                className={`btn btn-outline btn-sm ${isVerifying ? 'verifying' : ''}`}
+                                onClick={() => handleVerify(key)}
+                                disabled={isVerifying}
+                              >
+                                {isVerifying ? <><span className="spinner" /> Verifying...</> : 'Verify Merkle Proof'}
+                              </button>
+                            )}
+                            {isVerified && (
+                              <div className="verification-result">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2">
+                                  <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round"/>
+                                  <circle cx="12" cy="12" r="10" strokeWidth="1.5"/>
+                                </svg>
+                                <span>Lines {cStart}–{cEnd} verified against root <code>{doc.merkleRoot.slice(0, 16)}...</code></span>
+                              </div>
+                            )}
+                            {verifyMessages.has(key) && !isVerified && (
+                              <p className="text-xs" style={{ color: 'var(--error)', marginTop: '0.5rem' }}>
+                                {verifyMessages.get(key)}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
             </div>
           </div>
 
@@ -358,18 +534,28 @@ export default function DocumentDetail() {
             </div>
 
             <div className="sidebar-card card" id="sidebar-host-info">
-              <h4 className="heading-sm">Host Info</h4>
+              <h4 className="heading-sm">Host Identity</h4>
               <div className="sidebar-field">
                 <span className="text-xs">Name</span>
                 <span className="text-sm">{hostName}</span>
               </div>
+              {doc.host?.ensName && (
+                <div className="sidebar-field">
+                  <span className="text-xs">ENS</span>
+                  <span className="text-sm" style={{ color: 'var(--accent-violet)' }}>{doc.host.ensName}</span>
+                </div>
+              )}
+              {doc.host?.signerAddress && (
+                <div className="sidebar-field">
+                  <span className="text-xs">Signer</span>
+                  <code className="sidebar-hash text-mono">{doc.host.signerAddress}</code>
+                </div>
+              )}
               <div className="sidebar-field">
                 <span className="text-xs">Trust Model</span>
-                <span className="text-sm">{doc.host?.trustModel === 'institution' ? `Institution: ${doc.host.institution}` : 'Reputation Based'}</span>
-              </div>
-              <div className="sidebar-field">
-                <span className="text-xs">Reputation Score</span>
-                <span className="text-sm">{doc.host?.reputation ?? 0}/100</span>
+                <span className="badge" style={{ fontSize: '0.7rem' }}>
+                  {doc.host?.trustModel === 'institution' ? `🏛 ${doc.host.institution}` : '👤 Reputation'}
+                </span>
               </div>
             </div>
 
