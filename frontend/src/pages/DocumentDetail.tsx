@@ -9,6 +9,7 @@ import {
   type ProofPackage,
 } from '../api/marketplace';
 import { useWallet } from '../context/WalletContext';
+import { createPaidFetch } from '../lib/x402-client';
 import './DocumentDetail.css';
 
 interface SectionPurchaseData {
@@ -19,7 +20,7 @@ interface SectionPurchaseData {
 
 export default function DocumentDetail() {
   const { id } = useParams<{ id: string }>();
-  const { address: walletAddress, isConnected: walletConnected, ensName, identity, payFetch } = useWallet();
+  const { address: walletAddress, isConnected: walletConnected, ensName, identity } = useWallet();
   const [doc, setDoc] = useState<DocumentListing | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,13 +101,18 @@ export default function DocumentDetail() {
   };
 
   const handlePurchase = async (sectionId: string) => {
+    if (!walletConnected || !walletAddress) {
+      alert('Please connect your wallet first.');
+      return;
+    }
     setPurchasingSection(sectionId);
     try {
+      const paidFetch = await createPaidFetch();
       const result = await purchaseSection(
         doc.id,
         sectionId,
-        walletAddress || '0xBuyerAddress',
-        payFetch || undefined
+        walletAddress,
+        paidFetch
       );
       if (result.proofPackage) {
         setPurchasedSections((prev) => {
@@ -140,7 +146,12 @@ export default function DocumentDetail() {
     const customKey = `custom-${start}-${end}`;
     setIsPurchasingCustom(true);
     try {
-      const result = await purchaseLines(doc.id, start, end, walletAddress || '0xBuyerAddress', payFetch || undefined);
+      if (!walletConnected || !walletAddress) {
+        alert('Please connect your wallet first.');
+        return;
+      }
+      const paidFetch = await createPaidFetch();
+      const result = await purchaseLines(doc.id, start, end, walletAddress, paidFetch);
       if (result.proofPackage) {
         setPurchasedSections((prev) => {
           const next = new Map(prev);

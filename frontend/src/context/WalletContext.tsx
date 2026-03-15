@@ -3,14 +3,10 @@ import {
   useContext,
   useState,
   useCallback,
-  useRef,
   type ReactNode,
 } from "react";
 import { BrowserProvider, JsonRpcProvider, type Signer } from "ethers";
 import { SiweMessage } from "siwe";
-import { createWalletClient, custom } from "viem";
-import { baseSepolia } from "viem/chains";
-import { wrapFetchWithPayment } from "x402-fetch";
 
 const BACKEND_URL = "http://localhost:3001";
 
@@ -22,8 +18,6 @@ interface ENSIdentity {
   parentName: string | null;
 }
 
-type PayFetch = (input: any, init?: RequestInit) => Promise<Response>;
-
 interface WalletState {
   address: string | null;
   ensName: string | null;
@@ -32,7 +26,6 @@ interface WalletState {
   isConnected: boolean;
   identity: ENSIdentity | null;
   identityLoading: boolean;
-  payFetch: PayFetch | null;
   connect: () => Promise<void>;
   disconnect: () => void;
 }
@@ -45,7 +38,6 @@ const WalletContext = createContext<WalletState>({
   isConnected: false,
   identity: null,
   identityLoading: false,
-  payFetch: null,
   connect: async () => {},
   disconnect: () => {},
 });
@@ -57,8 +49,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [identity, setIdentity] = useState<ENSIdentity | null>(null);
   const [identityLoading, setIdentityLoading] = useState(false);
-  const payFetchRef = useRef<PayFetch | null>(null);
-  const [payFetch, setPayFetch] = useState<PayFetch | null>(null);
 
   const resolveENSIdentity = useCallback(async (addr: string, chainId?: number) => {
     setIdentityLoading(true);
@@ -136,24 +126,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Create viem wallet client for x402 payment signing
-      try {
-        const viemClient = createWalletClient({
-          account: addr as `0x${string}`,
-          chain: baseSepolia,
-          transport: custom((window as any).ethereum),
-        });
-        const wrappedFetch = wrapFetchWithPayment(
-          globalThis.fetch,
-          viemClient as any,
-          BigInt(1 * 10 ** 6), // max 1 USDC per request
-        );
-        payFetchRef.current = wrappedFetch;
-        setPayFetch(() => wrappedFetch);
-      } catch (x402Err) {
-        console.warn("x402 wallet client creation failed:", x402Err);
-      }
-
       setAddress(addr);
       setEnsName(ens);
       setSigner(s);
@@ -175,8 +147,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setEnsName(null);
     setSigner(null);
     setIdentity(null);
-    payFetchRef.current = null;
-    setPayFetch(null);
   }, []);
 
   return (
@@ -189,7 +159,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         isConnected: !!address,
         identity,
         identityLoading,
-        payFetch,
         connect,
         disconnect,
       }}
