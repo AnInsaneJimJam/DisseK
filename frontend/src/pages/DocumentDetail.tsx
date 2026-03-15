@@ -8,6 +8,7 @@ import {
   type DocumentListing,
   type ProofPackage,
 } from '../api/marketplace';
+import { createPaidFetch } from '../lib/x402-client';
 import { useWallet } from '../context/WalletContext';
 import './DocumentDetail.css';
 
@@ -71,12 +72,18 @@ export default function DocumentDetail() {
   const hostName = doc.host?.name || 'Unknown Host';
 
   const handlePurchase = async (sectionId: string) => {
+    if (!walletConnected) {
+      alert('Please connect your wallet first.');
+      return;
+    }
     setPurchasingSection(sectionId);
     try {
+      const paidFetch = await createPaidFetch();
       const result = await purchaseSection(
         doc.id,
         sectionId,
-        walletAddress || '0xBuyerAddress'
+        walletAddress || '0xBuyerAddress',
+        paidFetch
       );
       if (result.proofPackage) {
         setPurchasedSections((prev) => {
@@ -105,9 +112,14 @@ export default function DocumentDetail() {
       return;
     }
     const customKey = `custom-${start}-${end}`;
+    if (!walletConnected) {
+      alert('Please connect your wallet first.');
+      return;
+    }
     setIsPurchasingCustom(true);
     try {
-      const result = await purchaseLines(doc.id, start, end, walletAddress || '0xBuyerAddress');
+      const paidFetch = await createPaidFetch();
+      const result = await purchaseLines(doc.id, start, end, walletAddress || '0xBuyerAddress', paidFetch);
       if (result.proofPackage) {
         setPurchasedSections((prev) => {
           const next = new Map(prev);

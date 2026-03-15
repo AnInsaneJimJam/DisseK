@@ -1,79 +1,56 @@
-# DisseK Backend
+# DisseK — Host Backend
 
-Express.js backend for selective disclosure of Fileverse dDocs using Merkle Range Proofs.
+Express.js server for selective disclosure of Fileverse dDocs using Merkle Range Proofs, paywalled with x402.
 
-## How It Works
+## Prerequisites
 
-1. **Owner** sends `POST /disclose` with `{ ddocId, startLine, endLine }`
-2. Backend fetches the full document from the Fileverse API
-3. The Rust WASM proof engine builds a Merkle tree over all lines
-4. It extracts a multi-proof for the selected line range
-5. A new partial document is created on Fileverse containing only the disclosed lines + proof package
-6. **Bob** can verify the disclosed lines against the authoritative Merkle root using `POST /verify`
+- Node.js ≥ 20
+- Rust WASM proof engine compiled (see `../proof-engine/README.md`)
 
-## Setup
+## Install
 
 ```bash
-# Prerequisites: Rust WASM must be compiled first
+# Build the proof engine first (one-time)
 cd ../proof-engine && wasm-pack build --target nodejs --out-dir pkg && cd ../backend
 
 # Install dependencies
 npm install
 
-# Copy and configure env
+# Configure environment
 cp .env.example .env
-# Edit .env with your FILEVERSE_API_URL
 ```
+
+Edit `.env`:
+
+| Variable | Description | Default |
+|---|---|---|
+| `FILEVERSE_API_URL` | Fileverse MCP server URL | `http://localhost:3000` |
+| `PORT` | Server port | `3001` |
+| `EVM_PAY_TO_ADDRESS` | Your wallet address for x402 payments | — |
+| `X402_FACILITATOR_URL` | x402 facilitator | `https://x402.org/facilitator` |
+| `X402_NETWORK` | CAIP-2 chain ID | `eip155:84532` (Base Sepolia) |
+| `DISCLOSURE_PRICE` | Price per disclosure | `$0.01` |
 
 ## Run
 
 ```bash
-# Development (with hot reload)
+# Development (hot reload)
 npm run dev
 
 # Production
 npm start
-
-# Test proof engine locally (no Fileverse API needed)
-npm run test-flow
 ```
 
-## API Endpoints
+Server starts on `http://localhost:3001`.
 
-### `POST /disclose`
-Generate a selective disclosure from a Fileverse document.
+## Endpoints
 
-**Request:**
-```json
-{ "ddocId": "abc123", "startLine": 0, "endLine": 5 }
-```
-Requires `FILEVERSE_API_URL` env var.
-
-### `POST /disclose-direct`
-Same as `/disclose` but accepts document content directly (no Fileverse fetch needed).
-
-**Request:**
-```json
-{ "content": "line1\nline2\nline3", "startLine": 0, "endLine": 1, "title": "My Doc" }
-```
-
-### `POST /verify`
-Verify that disclosed lines match the original document's Merkle root.
-
-**Request:**
-```json
-{
-  "disclosedLines": ["line1", "line2"],
-  "proofPackage": {
-    "original_root": "...",
-    "total_leaves": 16,
-    "range_start": 0,
-    "range_end": 1,
-    "salts": ["..."],
-    "multi_proof": "..."
-  }
-}
-```
-
-### `GET /health`
-Health check.
+| Method | Path | Paywalled | Description |
+|---|---|---|---|
+| `POST` | `/disclose` | x402 | Generate selective disclosure |
+| `POST` | `/disclose-direct` | — | Disclosure from raw content |
+| `POST` | `/verify` | — | Verify disclosed lines against Merkle root |
+| `POST` | `/build-tree` | — | Build Merkle tree for a document |
+| `GET` | `/documents` | — | List Fileverse documents |
+| `GET` | `/documents/:ddocId` | — | Get document metadata |
+| `GET` | `/health` | — | Health check |

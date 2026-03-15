@@ -5,6 +5,8 @@
  *   /host-api/* → host backend (port 3001)
  */
 
+import type { PaidFetch } from '../lib/x402-client';
+
 // ─── Types ───────────────────────────────────────────────────────────
 
 export interface Host {
@@ -89,8 +91,13 @@ export interface VerifyResult {
 
 // ─── API Calls ───────────────────────────────────────────────────────
 
-async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
+async function fetchJson<T>(
+  url: string,
+  init?: RequestInit,
+  customFetch?: typeof fetch
+): Promise<T> {
+  const doFetch = customFetch || fetch;
+  const res = await doFetch(url, init);
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(body.error || `HTTP ${res.status}`);
@@ -169,26 +176,36 @@ export function purchaseLines(
   documentId: string,
   lineStart: number,
   lineEnd: number,
-  buyerAddress: string
+  buyerAddress: string,
+  paidFetch?: PaidFetch
 ): Promise<PurchaseResult> {
-  return fetchJson(`/api/documents/${documentId}/purchase`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ lineStart, lineEnd, buyerAddress }),
-  });
+  return fetchJson(
+    `/api/documents/${documentId}/purchase`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lineStart, lineEnd, buyerAddress }),
+    },
+    paidFetch
+  );
 }
 
 
 export function purchaseSection(
   documentId: string,
   sectionId: string,
-  buyerAddress: string
+  buyerAddress: string,
+  paidFetch?: PaidFetch
 ): Promise<PurchaseResult> {
-  return fetchJson(`/api/documents/${documentId}/purchase`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sectionId, buyerAddress }),
-  });
+  return fetchJson(
+    `/api/documents/${documentId}/purchase`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sectionId, buyerAddress }),
+    },
+    paidFetch
+  );
 }
 
 // --- Verify ---

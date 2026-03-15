@@ -1,66 +1,48 @@
-## Foundry
+# DisseK — Smart Contracts
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+Solidity contracts for on-chain anchoring of Merkle roots. Built with Foundry.
 
-Foundry consists of:
+## Prerequisites
 
-- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
-- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
-- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
-- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+- [Foundry](https://book.getfoundry.sh/getting-started/installation) (`forge`, `cast`, `anvil`)
 
-## Documentation
+## Install
 
-https://book.getfoundry.sh/
-
-## Usage
-
-### Build
-
-```shell
-$ forge build
+```bash
+forge install
 ```
 
-### Test
+## Build
 
-```shell
-$ forge test
+```bash
+forge build
 ```
 
-### Format
+## Test
 
-```shell
-$ forge fmt
+```bash
+forge test
 ```
 
-### Gas Snapshots
+## Deploy
 
-```shell
-$ forge snapshot
+```bash
+# To a local Anvil node
+anvil &
+forge script script/MerkleAnchor.s.sol --rpc-url http://127.0.0.1:8545 --broadcast
+
+# To Base Sepolia
+forge script script/MerkleAnchor.s.sol \
+  --rpc-url https://sepolia.base.org \
+  --private-key $PRIVATE_KEY \
+  --broadcast --verify
 ```
 
-### Anvil
+## Contract
 
-```shell
-$ anvil
-```
+**`MerkleAnchor.sol`** — Stores document Merkle roots on-chain so anyone can independently verify a selective disclosure without trusting the seller.
 
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+| Function | Description |
+|---|---|
+| `anchor(bytes32 root, string ddocId)` | Anchor a Merkle root for a document |
+| `getRoot(string ddocId)` | Look up the anchored root for a document |
