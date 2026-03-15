@@ -128,3 +128,27 @@
     position: static;
   }
 }
+
+/* Agent Verifier */
+.agent-verifier {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.agent-verifier-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.agent-verifier-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.ens-chain-toggle {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}

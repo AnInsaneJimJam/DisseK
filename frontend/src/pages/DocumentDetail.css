@@ -281,6 +281,31 @@
   border-radius: var(--radius-md);
 }
 
+/* Identity panel */
+.identity-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.identity-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.purchase-mode-toggle {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.namespace-input {
+  width: 100%;
+}
+
 /* Responsive */
 @media (max-width: 960px) {
   .doc-detail-layout {

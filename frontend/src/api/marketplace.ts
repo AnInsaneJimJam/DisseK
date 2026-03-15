@@ -89,8 +89,11 @@ export interface VerifyResult {
 
 // ─── API Calls ───────────────────────────────────────────────────────
 
-async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
+type FetchFn = (input: any, init?: RequestInit) => Promise<Response>;
+
+async function fetchJson<T>(url: string, init?: RequestInit, customFetch?: FetchFn): Promise<T> {
+  const f = customFetch || fetch;
+  const res = await f(url, init);
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(body.error || `HTTP ${res.status}`);
@@ -169,26 +172,28 @@ export function purchaseLines(
   documentId: string,
   lineStart: number,
   lineEnd: number,
-  buyerAddress: string
+  buyerAddress: string,
+  customFetch?: FetchFn
 ): Promise<PurchaseResult> {
   return fetchJson(`/api/documents/${documentId}/purchase`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ lineStart, lineEnd, buyerAddress }),
-  });
+  }, customFetch);
 }
 
 
 export function purchaseSection(
   documentId: string,
   sectionId: string,
-  buyerAddress: string
+  buyerAddress: string,
+  customFetch?: FetchFn
 ): Promise<PurchaseResult> {
   return fetchJson(`/api/documents/${documentId}/purchase`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sectionId, buyerAddress }),
-  });
+  }, customFetch);
 }
 
 // --- Verify ---
