@@ -108,6 +108,7 @@ No accounts, no invoices, no manual transfers. An AI agent can autonomously disc
 ## Setup
 
 ### Prerequisites
+https://youtu.be/30YRtetrvGY
 
 - **Rust + wasm-pack** — for compiling the proof engine
 - **Node.js ≥ 20** — for all three servers
