@@ -173,13 +173,13 @@ export function purchaseLines(
   lineStart: number,
   lineEnd: number,
   buyerAddress: string,
-  customFetch?: FetchFn
+  paymentTx?: string,
 ): Promise<PurchaseResult> {
   return fetchJson(`/api/documents/${documentId}/purchase`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ lineStart, lineEnd, buyerAddress }),
-  }, customFetch);
+    body: JSON.stringify({ lineStart, lineEnd, buyerAddress, paymentTx }),
+  });
 }
 
 
@@ -187,13 +187,13 @@ export function purchaseSection(
   documentId: string,
   sectionId: string,
   buyerAddress: string,
-  customFetch?: FetchFn
+  paymentTx?: string,
 ): Promise<PurchaseResult> {
   return fetchJson(`/api/documents/${documentId}/purchase`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sectionId, buyerAddress }),
-  }, customFetch);
+    body: JSON.stringify({ sectionId, buyerAddress, paymentTx }),
+  });
 }
 
 // --- Verify ---

@@ -17,12 +17,11 @@ DisseK (Selective Disclosure of Knowledge) is a decentralised protocol for monet
 4. [Data Flow: Publish](#4-data-flow-publish)
 5. [Data Flow: Purchase & Disclosure](#5-data-flow-purchase--disclosure)
 6. [Data Flow: Verification](#6-data-flow-verification)
-7. [x402 Payment Protocol Integration](#7-x402-payment-protocol-integration)
-8. [Fileverse MCP Integration](#8-fileverse-mcp-integration)
-9. [Merkle Range Proof Scheme](#9-merkle-range-proof-scheme)
-10. [Trust Model](#10-trust-model)
-11. [Environment Configuration](#11-environment-configuration)
-12. [Running the System](#12-running-the-system)
+7. [Fileverse MCP Integration](#7-fileverse-mcp-integration)
+8. [Merkle Range Proof Scheme](#8-merkle-range-proof-scheme)
+9. [Trust Model](#9-trust-model)
+10. [Environment Configuration](#10-environment-configuration)
+11. [Running the System](#11-running-the-system)
 
 ---
 
@@ -32,7 +31,7 @@ DisseK (Selective Disclosure of Knowledge) is a decentralised protocol for monet
 ┌──────────────┐         ┌───────────────────┐         ┌──────────────────┐
 │   Frontend   │◄───────►│   Marketplace     │◄───────►│  Host Backend    │
 │  (React/Vite)│  HTTP   │   (Express :3002) │  HTTP   │  (Express :3001) │
-│  port 5173   │         │  x402 on purchase │         │  x402 on disclose│
+│  port 5173   │         │                   │         │                  │
 └──────┬───────┘         └────────┬──────────┘         └────────┬─────────┘
        │                          │                             │
        │ Vite proxy               │ Firestore/in-memory         │ MCP (StreamableHTTP)
@@ -72,20 +71,20 @@ DisseK/
 │
 ├── backend/               # Host Backend — document owner's private server
 │   ├── src/
-│   │   ├── server.ts      # Express app with x402 paywall on POST /disclose
+│   │   ├── server.ts      # Express app, route handlers
 │   │   ├── proof-service.ts   # TypeScript wrapper around WASM DocumentTree
 │   │   └── fileverse-client.ts # MCP SDK client for Fileverse dDocs
-│   ├── .env               # FILEVERSE_API_URL, PORT, EVM_PAY_TO_ADDRESS, etc.
-│   └── package.json       # @x402/express, @x402/evm, @x402/core, proof-engine
+│   ├── .env               # FILEVERSE_API_URL, PORT
+│   └── package.json       # proof-engine, MCP SDK, express, cors
 │
 ├── marketplace/           # Marketplace Backend — public discovery + purchase relay
 │   ├── src/
-│   │   ├── server.ts      # Express app with x402 paywall on purchase endpoint
+│   │   ├── server.ts      # Express app, purchase relay, host forwarding
 │   │   ├── store.ts       # Firestore + in-memory fallback data store
 │   │   ├── types.ts       # Host, DocumentListing, SectionListing, Purchase
 │   │   └── firebase.ts    # Firebase Admin SDK initialisation
-│   ├── .env               # MARKETPLACE_PORT, EVM_PAY_TO_ADDRESS, etc.
-│   └── package.json       # @x402/express, @x402/evm, @x402/core, firebase-admin
+│   ├── .env               # MARKETPLACE_PORT
+│   └── package.json       # express, cors, firebase-admin, uuid
 │
 ├── frontend/              # React SPA — Vite + TypeScript
 │   ├── src/
@@ -159,13 +158,13 @@ cd proof-engine && wasm-pack build --target nodejs --out-dir pkg
 The host backend is the document owner's private server. It:
 1. Connects to Fileverse via MCP to read/create documents
 2. Wraps the WASM proof engine to generate and verify Merkle proofs
-3. Enforces x402 payment on the disclosure endpoint
+2. Wraps the WASM proof engine to generate and verify Merkle proofs
 
 #### Endpoints
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `POST` | `/disclose` | **x402 paid** | Generate selective disclosure for a line range |
+| `POST` | `/disclose` | Free | Generate selective disclosure for a line range |
 | `POST` | `/disclose-direct` | Free | Disclosure from raw content (no Fileverse) |
 | `POST` | `/verify` | Free | Verify disclosed lines against a proof package |
 | `POST` | `/build-tree` | Free | Build Merkle tree, return root hash (for publish flow) |
@@ -174,7 +173,7 @@ The host backend is the document owner's private server. It:
 | `GET`  | `/health` | Free | Health check |
 
 #### Key files:
-- **`server.ts`** — Express app, x402 middleware, route handlers
+- **`server.ts`** — Express app, route handlers
 - **`proof-service.ts`** — TypeScript wrapper: `generateDisclosure()`, `verifyDisclosure()`, `buildTree()`
 - **`fileverse-client.ts`** — Singleton MCP client using `@modelcontextprotocol/sdk` with `StreamableHTTPClientTransport`
 
@@ -197,7 +196,7 @@ The marketplace is a public directory. It **never** sees original document conte
 | `POST` | `/api/documents` | Free | Create a document listing |
 | `GET`  | `/api/documents` | Free | Browse/search listings (`?q=...&tag=...`) |
 | `GET`  | `/api/documents/:id` | Free | Get listing details + host info |
-| `POST` | `/api/documents/:id/purchase` | **x402 paid** | Purchase a section or line range |
+| `POST` | `/api/documents/:id/purchase` | Free | Purchase a section or line range |
 | `GET`  | `/api/purchases/:id` | Free | Get purchase record |
 | `GET`  | `/api/purchases?buyer=0x...` | Free | List purchases by buyer |
 | `POST` | `/api/verify` | Free | Proxy verification to a host |
@@ -304,18 +303,10 @@ Buyer (Frontend)              Marketplace (:3002)            Host Backend (:3001
       │  1. GET /api/documents ─────►  Return listings             │                        │
       │  2. GET /api/documents/:id ─►  Return detail + sections   │                        │
       │                             │                              │                        │
-      │  3. POST /api/documents/:id/purchase ──► (x402 paywall)   │                        │
-      │     ← HTTP 402 + PAYMENT-REQUIRED header                   │                        │
-      │     (buyer's x402 client auto-pays USDC)                   │                        │
-      │     ← Payment settled via facilitator                      │                        │
-      │                             │                              │                        │
+      │  3. POST /api/documents/:id/purchase                      │                        │
       │     Request goes through ──►│                              │                        │
       │                             │  4. Create Purchase record   │                        │
-      │                             │  5. POST /disclose ──────────► (x402 paywall)         │
-      │                             │     ← HTTP 402               │                        │
-      │                             │     (marketplace is also     │                        │
-      │                             │      an x402 client here)    │                        │
-      │                             │     Payment settled ─────────►                        │
+      │                             │  5. POST /disclose ──────────►                        │
       │                             │                              │  6. Fetch doc ─────────► getDocument()
       │                             │                              │  7. Generate proof      │
       │                             │                              │  8. Create partial doc ─► createDocument()
@@ -331,8 +322,6 @@ Buyer (Frontend)              Marketplace (:3002)            Host Backend (:3001
       │                             │                              │                        │
       │  10. Display in UI          │                              │                        │
 ```
-
-**Note:** The marketplace-to-host call (`step 5`) also hits the x402 paywall on the host's `POST /disclose`. In production, the marketplace would need its own x402 client to pay the host, creating a **two-tier payment chain**: buyer pays marketplace, marketplace pays host.
 
 ---
 
@@ -355,74 +344,7 @@ Verifier (Frontend)           Marketplace (:3002)        Host Backend (:3001)   
 
 ---
 
-## 7. x402 Payment Protocol Integration
-
-[x402](https://x402.org) is an open HTTP-native payment protocol that uses the `402 Payment Required` status code for machine-to-machine stablecoin payments.
-
-### How It Works
-
-1. Client sends a request to a protected endpoint (e.g. `POST /disclose`)
-2. Server responds with **HTTP 402** and a `PAYMENT-REQUIRED` header containing a base64-encoded JSON payload:
-   ```json
-   {
-     "x402Version": 2,
-     "accepts": [{
-       "scheme": "exact",
-       "network": "eip155:84532",
-       "amount": "10000",
-       "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-       "payTo": "0xHostWalletAddress",
-       "maxTimeoutSeconds": 300
-     }]
-   }
-   ```
-3. The x402 client (in the buyer's browser or the marketplace server) automatically:
-   - Signs a USDC transfer authorisation
-   - Sends it to the x402 **Facilitator** (`https://x402.org/facilitator`)
-   - The Facilitator settles the payment on-chain
-4. Client retries the original request with a `X-PAYMENT` header containing the settlement receipt
-5. Server's x402 middleware validates the receipt and allows the request through
-
-### Integration in DisseK
-
-**Two paywalls protect two endpoints across two servers:**
-
-#### Host Backend (`backend/src/server.ts`)
-```
-POST /disclose → x402 paywall ($0.01 USDC on Base Sepolia)
-```
-Uses `@x402/express` `paymentMiddleware` applied globally with route key `"POST /disclose"`.
-
-#### Marketplace Backend (`marketplace/src/server.ts`)
-```
-POST /api/documents/:id/purchase → x402 paywall ($0.01 USDC on Base Sepolia)
-```
-Uses an Express sub-Router (`purchaseRouter`) because x402's `paymentMiddleware` does **exact string matching** and cannot handle Express-style parameterised routes (`:id`). The Router is mounted at `/api/documents/:id/purchase`, so x402 sees the request as `"POST /"` which it can match.
-
-### Packages Used
-- `@x402/express` — Express middleware (`paymentMiddleware`, `x402ResourceServer`)
-- `@x402/evm` — EVM payment scheme (`ExactEvmScheme`)
-- `@x402/core` — Facilitator client (`HTTPFacilitatorClient`)
-
-### Configuration (env vars)
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `EVM_PAY_TO_ADDRESS` | Wallet address receiving USDC payments | `0x000...000` |
-| `X402_FACILITATOR_URL` | x402 Facilitator endpoint | `https://x402.org/facilitator` |
-| `X402_NETWORK` | CAIP-2 network identifier | `eip155:84532` (Base Sepolia) |
-| `DISCLOSURE_PRICE` | Price per disclosure (host) | `$0.01` |
-| `PURCHASE_PRICE` | Price per purchase (marketplace) | `$0.01` |
-
-### Supported Networks
-- `eip155:84532` — Base Sepolia (testnet)
-- `eip155:8453` — Base Mainnet (production)
-
-### Payment Asset
-- **USDC** on Base Sepolia: `0x036CbD53842c5426634e7929541eC2318f3dCF7e`
-
----
-
-## 8. Fileverse MCP Integration
+## 7. Fileverse MCP Integration
 
 DisseK connects to Fileverse's decentralised document storage via the **Model Context Protocol (MCP)**.
 
@@ -449,7 +371,7 @@ DisseK connects to Fileverse's decentralised document storage via the **Model Co
 
 ---
 
-## 9. Merkle Range Proof Scheme
+## 8. Merkle Range Proof Scheme
 
 ### Tree Construction
 1. Split document into `N` lines
@@ -487,7 +409,7 @@ For a contiguous range `[start, end]`:
 
 ---
 
-## 10. Trust Model
+## 9. Trust Model
 
 DisseK supports two trust models for document hosts:
 
@@ -510,25 +432,17 @@ Regardless of trust model, the Merkle root is anchored on-chain via `MerkleAncho
 
 ---
 
-## 11. Environment Configuration
+## 10. Environment Configuration
 
 ### Host Backend (`backend/.env`)
 ```env
 FILEVERSE_API_URL=https://your-fileverse-mcp-url/mcp
 PORT=3001
-EVM_PAY_TO_ADDRESS=0xYourWalletAddress
-X402_FACILITATOR_URL=https://x402.org/facilitator
-X402_NETWORK=eip155:84532
-DISCLOSURE_PRICE=$0.01
 ```
 
 ### Marketplace Backend (`marketplace/.env`)
 ```env
 MARKETPLACE_PORT=3002
-EVM_PAY_TO_ADDRESS=0xYourWalletAddress
-X402_FACILITATOR_URL=https://x402.org/facilitator
-X402_NETWORK=eip155:84532
-PURCHASE_PRICE=$0.01
 # Optional: GOOGLE_APPLICATION_CREDENTIALS for Firestore persistence
 ```
 
@@ -542,13 +456,12 @@ proxy: {
 
 ---
 
-## 12. Running the System
+## 11. Running the System
 
 ### Prerequisites
 - **Rust + wasm-pack** (for proof engine compilation)
 - **Node.js 18+** (for all three servers)
 - **MetaMask** browser extension (for wallet connect)
-- **USDC on Base Sepolia** (for x402 payments in testing)
 
 ### Quick Start
 ```bash
@@ -563,7 +476,6 @@ cd frontend && npm install && cd ..
 # 3. Configure environment
 cp backend/.env.example backend/.env
 cp marketplace/.env.example marketplace/.env
-# Edit both .env files with your wallet address
 
 # 4. Start all servers
 bash restart.sh
@@ -578,16 +490,4 @@ bash restart.sh
 curl http://localhost:3001/health   # Host backend
 curl http://localhost:3002/api/health  # Marketplace
 # Frontend at http://localhost:5173
-```
-
-### Test x402 Paywalls
-```bash
-# Should return HTTP 402
-curl -s -w "%{http_code}" -X POST http://localhost:3001/disclose \
-  -H "Content-Type: application/json" \
-  -d '{"ddocId":"test","startLine":0,"endLine":1}'
-
-curl -s -w "%{http_code}" -X POST http://localhost:3002/api/documents/test/purchase \
-  -H "Content-Type: application/json" \
-  -d '{"sectionId":"s1","buyerAddress":"0x123"}'
 ```

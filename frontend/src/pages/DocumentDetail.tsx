@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { Contract, BrowserProvider } from 'ethers';
 import {
   getDocument,
   purchaseSection,
@@ -9,7 +10,8 @@ import {
   type ProofPackage,
 } from '../api/marketplace';
 import { useWallet } from '../context/WalletContext';
-import { createPaidFetch } from '../lib/x402-client';
+import { USDC_ADDRESS, ERC20_ABI, usdToUsdcUnits } from '../contracts/USDC';
+import { MERKLE_ANCHOR_CHAIN_ID } from '../contracts/MerkleAnchor';
 import './DocumentDetail.css';
 
 interface SectionPurchaseData {
@@ -20,7 +22,7 @@ interface SectionPurchaseData {
 
 export default function DocumentDetail() {
   const { id } = useParams<{ id: string }>();
-  const { address: walletAddress, isConnected: walletConnected, ensName, identity } = useWallet();
+  const { address: walletAddress, isConnected: walletConnected, ensName, identity, signer } = useWallet();
   const [doc, setDoc] = useState<DocumentListing | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +37,7 @@ export default function DocumentDetail() {
   const [customLineStart, setCustomLineStart] = useState('');
   const [customLineEnd, setCustomLineEnd] = useState('');
   const [isPurchasingCustom, setIsPurchasingCustom] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
 
   // ENS purchase mode
   const [purchaseMode, setPurchaseMode] = useState<'individual' | 'organization'>('individual');
@@ -101,18 +104,61 @@ export default function DocumentDetail() {
   };
 
   const handlePurchase = async (sectionId: string) => {
-    if (!walletConnected || !walletAddress) {
+    if (!walletConnected || !walletAddress || !signer) {
       alert('Please connect your wallet first.');
       return;
     }
+    if (!doc) return;
+
+    const section = doc.sections.find(s => s.id === sectionId);
+    if (!section) return;
+
+    const lineCount = section.lineEnd - section.lineStart + 1;
+    const totalCost = lineCount * section.pricePerLine;
+
     setPurchasingSection(sectionId);
     try {
-      const paidFetch = await createPaidFetch();
+      let txHash: string | undefined;
+
+      // Send USDC payment if not free
+      if (totalCost > 0 && doc.host?.signerAddress) {
+        const publisherAddr = doc.host.signerAddress;
+        const confirmed = window.confirm(
+          `Pay $${totalCost.toFixed(2)} USDC to ${doc.host.name || publisherAddr.slice(0, 10) + '...'}?\n\n` +
+          `• ${lineCount} lines × $${section.pricePerLine}/line\n` +
+          `• Recipient: ${publisherAddr}\n` +
+          `• Network: Sepolia\n\n` +
+          `MetaMask will open next to approve the USDC transfer.`
+        );
+        if (!confirmed) {
+          setPurchasingSection(null);
+          return;
+        }
+
+        // Ensure wallet is on Sepolia (where USDC contract lives)
+        setPaymentStatus('Switching to Sepolia...');
+        await (window as any).ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: '0x' + MERKLE_ANCHOR_CHAIN_ID.toString(16) }],
+        });
+        const freshProvider = new BrowserProvider((window as any).ethereum);
+        const freshSigner = await freshProvider.getSigner();
+
+        setPaymentStatus('Sending USDC payment...');
+        const usdc = new Contract(USDC_ADDRESS, ERC20_ABI, freshSigner);
+        const amount = usdToUsdcUnits(totalCost);
+        const tx = await usdc.transfer(publisherAddr, amount);
+        txHash = tx.hash;
+        setPaymentStatus('Waiting for confirmation...');
+        await tx.wait(1);
+        setPaymentStatus('Payment confirmed! Fetching disclosure...');
+      }
+
       const result = await purchaseSection(
         doc.id,
         sectionId,
         walletAddress,
-        paidFetch
+        txHash,
       );
       if (result.proofPackage) {
         setPurchasedSections((prev) => {
@@ -129,9 +175,14 @@ export default function DocumentDetail() {
         if (sectionIdx >= 0) grantAccess(sectionIdx);
       }
     } catch (err: any) {
-      alert(`Purchase failed: ${err.message}`);
+      if (err.code === 4001 || err.code === 'ACTION_REJECTED') {
+        // User rejected in MetaMask — silently cancel
+      } else {
+        alert(`Purchase failed: ${err.message}`);
+      }
     } finally {
       setPurchasingSection(null);
+      setPaymentStatus(null);
     }
   };
 
@@ -146,12 +197,50 @@ export default function DocumentDetail() {
     const customKey = `custom-${start}-${end}`;
     setIsPurchasingCustom(true);
     try {
-      if (!walletConnected || !walletAddress) {
+      if (!walletConnected || !walletAddress || !signer) {
         alert('Please connect your wallet first.');
         return;
       }
-      const paidFetch = await createPaidFetch();
-      const result = await purchaseLines(doc.id, start, end, walletAddress, paidFetch);
+
+      const lineCount = end - start + 1;
+      const totalCost = lineCount * doc.pricePerLine;
+      let txHash: string | undefined;
+
+      // Send USDC payment if not free
+      if (totalCost > 0 && doc.host?.signerAddress) {
+        const publisherAddr = doc.host.signerAddress;
+        const confirmed = window.confirm(
+          `Pay $${totalCost.toFixed(2)} USDC to ${doc.host.name || publisherAddr.slice(0, 10) + '...'}?\n\n` +
+          `\u2022 ${lineCount} lines \u00d7 $${doc.pricePerLine}/line\n` +
+          `\u2022 Recipient: ${publisherAddr}\n` +
+          `\u2022 Network: Sepolia\n\n` +
+          `MetaMask will open next to approve the USDC transfer.`
+        );
+        if (!confirmed) {
+          setIsPurchasingCustom(false);
+          return;
+        }
+
+        // Ensure wallet is on Sepolia (where USDC contract lives)
+        setPaymentStatus('Switching to Sepolia...');
+        await (window as any).ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: '0x' + MERKLE_ANCHOR_CHAIN_ID.toString(16) }],
+        });
+        const freshProvider = new BrowserProvider((window as any).ethereum);
+        const freshSigner = await freshProvider.getSigner();
+
+        setPaymentStatus('Sending USDC payment...');
+        const usdc = new Contract(USDC_ADDRESS, ERC20_ABI, freshSigner);
+        const amount = usdToUsdcUnits(totalCost);
+        const tx = await usdc.transfer(publisherAddr, amount);
+        txHash = tx.hash;
+        setPaymentStatus('Waiting for confirmation...');
+        await tx.wait(1);
+        setPaymentStatus('Payment confirmed! Fetching disclosure...');
+      }
+
+      const result = await purchaseLines(doc.id, start, end, walletAddress, txHash);
       if (result.proofPackage) {
         setPurchasedSections((prev) => {
           const next = new Map(prev);
@@ -164,9 +253,14 @@ export default function DocumentDetail() {
         });
       }
     } catch (err: any) {
-      alert(`Purchase failed: ${err.message}`);
+      if (err.code === 4001 || err.code === 'ACTION_REJECTED') {
+        // User rejected in MetaMask — silently cancel
+      } else {
+        alert(`Purchase failed: ${err.message}`);
+      }
     } finally {
       setIsPurchasingCustom(false);
+      setPaymentStatus(null);
     }
   };
 
@@ -207,7 +301,7 @@ export default function DocumentDetail() {
         <div className="breadcrumb fade-in" id="doc-breadcrumb">
           <Link to="/marketplace" className="breadcrumb-link">Marketplace</Link>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2">
-            <path d="M9 18l6-6-6-6" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M9 18l6-6-6-6" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <span className="breadcrumb-current">{doc.title}</span>
         </div>
@@ -248,16 +342,16 @@ export default function DocumentDetail() {
               <div className="doc-detail-meta">
                 <span className="text-sm">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <path d="M4 6h16M4 12h16M4 18h10" strokeLinecap="round"/>
+                    <path d="M4 6h16M4 12h16M4 18h10" strokeLinecap="round" />
                   </svg>
                   {doc.totalLines} lines · {doc.sections.length} sections
                 </span>
                 <span className="text-sm">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                    <line x1="16" y1="2" x2="16" y2="6"/>
-                    <line x1="8" y1="2" x2="8" y2="6"/>
-                    <line x1="3" y1="10" x2="21" y2="10"/>
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                    <line x1="16" y1="2" x2="16" y2="6" />
+                    <line x1="8" y1="2" x2="8" y2="6" />
+                    <line x1="3" y1="10" x2="21" y2="10" />
                   </svg>
                   {new Date(doc.createdAt).toLocaleDateString()}
                 </span>
@@ -339,8 +433,8 @@ export default function DocumentDetail() {
                             {isVerified && (
                               <span className="verified-badge">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round"/>
-                                  <circle cx="12" cy="12" r="10" strokeWidth="1.5"/>
+                                  <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
+                                  <circle cx="12" cy="12" r="10" strokeWidth="1.5" />
                                 </svg>
                                 Verified
                               </span>
@@ -366,8 +460,8 @@ export default function DocumentDetail() {
                           <div className="section-content-box">
                             <div className="section-content-label text-xs">
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                                <path d="M7 11V7a5 5 0 0110 0v4"/>
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                <path d="M7 11V7a5 5 0 0110 0v4" />
                               </svg>
                               Content Unlocked — {purchasedSections.get(section.id)!.disclosedLines.length} lines delivered with Merkle proof
                             </div>
@@ -388,8 +482,8 @@ export default function DocumentDetail() {
                                 style={{ marginTop: '0.75rem' }}
                               >
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" strokeLinecap="round" strokeLinejoin="round"/>
-                                  <path d="M15 3h6v6M10 14L21 3" strokeLinecap="round" strokeLinejoin="round"/>
+                                  <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" strokeLinecap="round" strokeLinejoin="round" />
+                                  <path d="M15 3h6v6M10 14L21 3" strokeLinecap="round" strokeLinejoin="round" />
                                 </svg>
                                 View on Fileverse
                               </a>
@@ -409,15 +503,15 @@ export default function DocumentDetail() {
                             {isPurchasing ? (
                               <>
                                 <span className="spinner" />
-                                Purchasing...
+                                {paymentStatus || 'Purchasing...'}
                               </>
                             ) : (
                               <>
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                                  <path d="M7 11V7a5 5 0 0110 0v4"/>
+                                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                  <path d="M7 11V7a5 5 0 0110 0v4" />
                                 </svg>
-                                {section.pricePerLine === 0 ? 'Get Free Section' : `Buy for $${totalPrice.toFixed(2)}`}
+                                {section.pricePerLine === 0 ? 'Get Free Section' : `Buy for $${totalPrice.toFixed(2)} USDC`}
                               </>
                             )}
                           </button>
@@ -437,8 +531,8 @@ export default function DocumentDetail() {
                             ) : (
                               <>
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round"/>
-                                  <circle cx="12" cy="12" r="10" strokeWidth="1.5"/>
+                                  <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
+                                  <circle cx="12" cy="12" r="10" strokeWidth="1.5" />
                                 </svg>
                                 Verify Merkle Proof
                               </>
@@ -448,8 +542,8 @@ export default function DocumentDetail() {
                         {isVerified && (
                           <div className="verification-result">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2">
-                              <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round"/>
-                              <circle cx="12" cy="12" r="10" strokeWidth="1.5"/>
+                              <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
+                              <circle cx="12" cy="12" r="10" strokeWidth="1.5" />
                             </svg>
                             <span>Lines {section.lineStart}–{section.lineEnd} verified against root <code>{doc.merkleRoot.slice(0, 16)}...</code></span>
                           </div>
@@ -510,8 +604,8 @@ export default function DocumentDetail() {
                       ) : (
                         <>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                            <path d="M7 11V7a5 5 0 0110 0v4"/>
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                            <path d="M7 11V7a5 5 0 0110 0v4" />
                           </svg>
                           Buy Lines
                         </>
@@ -570,8 +664,8 @@ export default function DocumentDetail() {
                             {isVerified && (
                               <div className="verification-result">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2">
-                                  <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round"/>
-                                  <circle cx="12" cy="12" r="10" strokeWidth="1.5"/>
+                                  <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
+                                  <circle cx="12" cy="12" r="10" strokeWidth="1.5" />
                                 </svg>
                                 <span>Lines {cStart}–{cEnd} verified against root <code>{doc.merkleRoot.slice(0, 16)}...</code></span>
                               </div>

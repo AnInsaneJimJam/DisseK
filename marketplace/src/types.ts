@@ -45,6 +45,7 @@ export interface Purchase {
   lineStart: number;
   lineEnd: number;
   totalCost: number;
+  paymentTx: string | null;
   disclosedLines: string[];
   proofPackage: ProofPackage | null;
   status: "pending" | "fulfilled" | "failed";

@@ -1,10 +1,6 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-// x402 imports kept for reference but paywall removed from backend
-// import { paymentMiddleware, x402ResourceServer } from "@x402/express";
-// import { ExactEvmScheme } from "@x402/evm/exact/server";
-// import { HTTPFacilitatorClient } from "@x402/core/server";
 import { FileverseClient } from "./fileverse-client.js";
 import { generateDisclosure, verifyDisclosure, buildTree } from "./proof-service.js";
 import { verifyAgentENS, encodeErc7930, buildAgentTextRecordKey } from "./ens-verifier.js";
@@ -16,10 +12,6 @@ app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 3001;
-
-// x402 paywall removed from backend — the marketplace already collects
-// payment from the buyer.  The backend's /disclose is only called by the
-// marketplace server (trusted), not by end users directly.
 
 // Shared singleton — stays connected across requests
 let _fvClient: FileverseClient | null = null;
