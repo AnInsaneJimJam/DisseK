@@ -26,7 +26,7 @@ export default function Landing() {
             <Link to="/marketplace" className="btn btn-primary btn-lg" id="hero-cta-explore">
               Explore Marketplace
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </Link>
             <Link to="/publish" className="btn btn-secondary btn-lg" id="hero-cta-publish">
@@ -72,7 +72,7 @@ export default function Landing() {
               <div className="step-number">01</div>
               <div className="step-icon">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent-violet)" strokeWidth="1.5">
-                  <path d="M12 5v14M5 12h14" strokeLinecap="round"/>
+                  <path d="M12 5v14M5 12h14" strokeLinecap="round" />
                 </svg>
               </div>
               <h3 className="heading-sm">Publish & Define</h3>
@@ -83,7 +83,7 @@ export default function Landing() {
 
             <div className="step-connector">
               <svg width="40" height="2" viewBox="0 0 40 2">
-                <line x1="0" y1="1" x2="40" y2="1" stroke="var(--border-hover)" strokeWidth="1" strokeDasharray="4 4"/>
+                <line x1="0" y1="1" x2="40" y2="1" stroke="var(--border-hover)" strokeWidth="1" strokeDasharray="4 4" />
               </svg>
             </div>
 
@@ -91,8 +91,8 @@ export default function Landing() {
               <div className="step-number">02</div>
               <div className="step-icon">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent-amber)" strokeWidth="1.5">
-                  <circle cx="12" cy="12" r="10"/>
-                  <path d="M12 6v6l4 2" strokeLinecap="round"/>
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 6v6l4 2" strokeLinecap="round" />
                 </svg>
               </div>
               <h3 className="heading-sm">Purchase Sections</h3>
@@ -103,7 +103,7 @@ export default function Landing() {
 
             <div className="step-connector">
               <svg width="40" height="2" viewBox="0 0 40 2">
-                <line x1="0" y1="1" x2="40" y2="1" stroke="var(--border-hover)" strokeWidth="1" strokeDasharray="4 4"/>
+                <line x1="0" y1="1" x2="40" y2="1" stroke="var(--border-hover)" strokeWidth="1" strokeDasharray="4 4" />
               </svg>
             </div>
 
@@ -111,8 +111,8 @@ export default function Landing() {
               <div className="step-number">03</div>
               <div className="step-icon">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="1.5">
-                  <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round"/>
-                  <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
+                  <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
                 </svg>
               </div>
               <h3 className="heading-sm">Verify & Use</h3>
@@ -136,8 +136,8 @@ export default function Landing() {
             <div className="feature-card card fade-in stagger-1" id="feature-merkle">
               <div className="feature-icon-wrap">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-violet)" strokeWidth="1.5">
-                  <path d="M12 2l10 6v8l-10 6L2 16V8l10-6z" strokeLinejoin="round"/>
-                  <path d="M12 22V12M2 8l10 4 10-4" strokeLinejoin="round"/>
+                  <path d="M12 2l10 6v8l-10 6L2 16V8l10-6z" strokeLinejoin="round" />
+                  <path d="M12 22V12M2 8l10 4 10-4" strokeLinejoin="round" />
                 </svg>
               </div>
               <h3>SHA256 Merkle Trees</h3>
@@ -147,8 +147,8 @@ export default function Landing() {
             <div className="feature-card card fade-in stagger-2" id="feature-wasm">
               <div className="feature-icon-wrap">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-indigo)" strokeWidth="1.5">
-                  <rect x="2" y="3" width="20" height="18" rx="3"/>
-                  <path d="M8 12h8M8 8h5M8 16h6" strokeLinecap="round"/>
+                  <rect x="2" y="3" width="20" height="18" rx="3" />
+                  <path d="M8 12h8M8 8h5M8 16h6" strokeLinecap="round" />
                 </svg>
               </div>
               <h3>Rust → WASM</h3>
@@ -158,19 +158,19 @@ export default function Landing() {
             <div className="feature-card card fade-in stagger-3" id="feature-ens">
               <div className="feature-icon-wrap">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-amber)" strokeWidth="1.5">
-                  <circle cx="12" cy="8" r="4"/>
-                  <path d="M5 20c0-3.866 3.134-7 7-7s7 3.134 7 7" strokeLinecap="round"/>
+                  <circle cx="12" cy="8" r="4" />
+                  <path d="M5 20c0-3.866 3.134-7 7-7s7 3.134 7 7" strokeLinecap="round" />
                 </svg>
               </div>
               <h3>Sign-In with Ethereum</h3>
               <p>Hosts authenticate via SIWE. Reputation-based hosts display their ENS name. Institutional hosts store their signer public key for verification.</p>
             </div>
 
-            <div className="feature-card card fade-in stagger-4" id="feature-x402">
+            <div className="feature-card card fade-in stagger-4" id="feature-line-by-line">
               <div className="feature-icon-wrap">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="1.5">
-                  <path d="M12 1v4M12 19v4M4 12H1M23 12h-3M18.364 5.636l-2.121 2.121M7.757 16.243l-2.121 2.121M18.364 18.364l-2.121-2.121M7.757 7.757L5.636 5.636" strokeLinecap="round"/>
-                  <circle cx="12" cy="12" r="4"/>
+                  <path d="M12 1v4M12 19v4M4 12H1M23 12h-3M18.364 5.636l-2.121 2.121M7.757 16.243l-2.121 2.121M18.364 18.364l-2.121-2.121M7.757 7.757L5.636 5.636" strokeLinecap="round" />
+                  <circle cx="12" cy="12" r="4" />
                 </svg>
               </div>
               <h3>Line-by-Line Sales</h3>
@@ -180,8 +180,8 @@ export default function Landing() {
             <div className="feature-card card fade-in stagger-5" id="feature-fileverse">
               <div className="feature-icon-wrap">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ec4899" strokeWidth="1.5">
-                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" strokeLinejoin="round"/>
-                  <path d="M14 2v6h6M12 18v-6M9 15l3 3 3-3" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" strokeLinejoin="round" />
+                  <path d="M14 2v6h6M12 18v-6M9 15l3 3 3-3" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </div>
               <h3>Fileverse Integration</h3>
@@ -191,7 +191,7 @@ export default function Landing() {
             <div className="feature-card card fade-in stagger-5" id="feature-onchain">
               <div className="feature-icon-wrap">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" strokeWidth="1.5">
-                  <path d="M13 10V3L4 14h7v7l9-11h-7z" strokeLinejoin="round"/>
+                  <path d="M13 10V3L4 14h7v7l9-11h-7z" strokeLinejoin="round" />
                 </svg>
               </div>
               <h3>On-Chain Anchoring</h3>

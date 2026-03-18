@@ -10,9 +10,8 @@ DisseK is a decentralised marketplace where data owners sell cryptographically v
 
 1. **Publisher** uploads a document to Fileverse, builds a Merkle tree over every line, and anchors the root on-chain
 2. **Buyer** browses the marketplace, picks a section (or custom line range), and clicks purchase
-3. **x402** handles payment automatically — USDC on Base, settled in one HTTP round-trip
-4. **Host backend** generates a selective disclosure: only the purchased lines + a multi-proof
-5. **Buyer verifies** the proof against the on-chain Merkle root — if it matches, the data is authentic
+3. **Host backend** generates a selective disclosure: only the purchased lines + a multi-proof
+4. **Buyer verifies** the proof against the on-chain Merkle root — if it matches, the data is authentic
 
 The undisclosed lines never leave the host. The marketplace never sees full document content. Verification is free and permissionless.
 
@@ -22,7 +21,7 @@ The undisclosed lines never leave the host. The marketplace never sees full docu
 
 ```
 proof-engine/     Rust → WASM    Merkle tree + range proofs (rs_merkle, sha2)
-backend/          Express.js     Host server — Fileverse integration, proof generation, x402 paywall
+backend/          Express.js     Host server — Fileverse integration, proof generation
 marketplace/      Express.js     Public directory — listings, purchase relay, Firestore/in-memory store
 frontend/         React + Vite   SPA — wallet connect (MetaMask + SIWE), purchase, verify
 contracts/        Solidity       MerkleAnchor.sol — on-chain root registry (Foundry)
@@ -61,39 +60,7 @@ This makes ENS the identity primitive for agent-to-agent data commerce.
 
 ---
 
-## Elsa x402 Integration
-
-[x402](https://x402.org) is an HTTP-native payment protocol that uses the `402 Payment Required` status code for machine-to-machine stablecoin micropayments.
-
-### How It Works in DisseK
-
-Two endpoints are paywalled across two servers:
-
-| Endpoint | Server | Price |
-|---|---|---|
-| `POST /disclose` | Host Backend (:3001) | $0.01 USDC |
-| `POST /api/documents/:id/purchase` | Marketplace (:3002) | $0.01 USDC |
-
-The flow is fully automatic:
-
-1. Client sends a request to a paywalled endpoint
-2. Server responds with **HTTP 402** + a `PAYMENT-REQUIRED` header
-3. The buyer's x402 client (in the browser) reads the requirements, prompts MetaMask for a USDC authorization signature
-4. Payment is settled on-chain via the x402 Facilitator
-5. Client retries the request with the settlement receipt
-6. Server validates and serves the response
-
-No accounts, no invoices, no manual transfers. An AI agent can autonomously discover data, pay for it, receive it, and verify it — all in one HTTP conversation.
-
-**Packages:** `@x402/express`, `@x402/evm`, `@x402/core` (server-side) · `@x402/fetch`, `@x402/evm` (client-side)
-**Network:** Base Sepolia (testnet) · Base Mainnet (production)
-**Asset:** USDC
-
----
-
 ## Challenges & Learnings
-
-**x402 doesn't support parameterised Express routes.** The middleware does exact string matching, so `POST /api/documents/:id/purchase` never matched. We solved this by mounting an Express sub-Router at the parameterised path, so x402 sees `POST /` and matches correctly.
 
 **Rust WASM compilation has target-specific quirks.** The proof engine must be compiled with `--target nodejs` for the backend. The leaf array also needs padding to the next power-of-two — a requirement of `rs_merkle` that isn't obvious from the docs.
 
@@ -111,9 +78,7 @@ No accounts, no invoices, no manual transfers. An AI agent can autonomously disc
 
 - **Rust + wasm-pack** — for compiling the proof engine
 - **Node.js ≥ 20** — for all three servers
-- **MetaMask** — for wallet connection and x402 payments
-- **USDC on Base Sepolia** — for testing payments ([faucet](https://faucet.circle.com/))
-
+- **MetaMask** — for wallet connection
 ### Quick Start
 
 ```bash
@@ -128,7 +93,6 @@ cd frontend && npm install && cd ..
 # 3. Configure environment
 cp backend/.env.example backend/.env
 cp marketplace/.env.example marketplace/.env
-# Edit both .env files — set EVM_PAY_TO_ADDRESS to your wallet
 
 # 4. Start all servers
 bash restart.sh
@@ -147,19 +111,6 @@ curl http://localhost:3002/api/health    # Marketplace
 # Frontend at http://localhost:5173
 ```
 
-### Test x402 Paywalls
-
-```bash
-# Both should return HTTP 402
-curl -s -w "%{http_code}" -X POST http://localhost:3001/disclose \
-  -H "Content-Type: application/json" \
-  -d '{"ddocId":"test","startLine":0,"endLine":1}'
-
-curl -s -w "%{http_code}" -X POST http://localhost:3002/api/documents/test/purchase \
-  -H "Content-Type: application/json" \
-  -d '{"sectionId":"s1","buyerAddress":"0x123"}'
-```
-
 See individual directory READMEs for more details:
 - [`backend/README.md`](backend/README.md)
 - [`marketplace/README.md`](marketplace/README.md)
@@ -173,10 +124,8 @@ See individual directory READMEs for more details:
 
 - **Agent-native SDK** — a standalone TypeScript/Python client that lets AI agents discover, purchase, and verify data without a browser
 - **Multi-chain support** — deploy MerkleAnchor on multiple L2s, support cross-chain proof verification
-- **Streaming disclosures** — reveal lines incrementally as payment streams in, using x402's streaming payment mode
 - **Reputation oracle** — move the host reputation system on-chain, let verified purchases and successful verifications increase reputation automatically
 - **Encrypted disclosures** — encrypt disclosed lines with the buyer's public key so only they can read the content, even if the response is intercepted
-- **Batch purchases** — purchase multiple sections across multiple documents in a single x402 transaction
 - **ENSIP-25 delegation UI** — a frontend for organizations to register agents and set text records without touching a CLI
 - **Fileverse IPFS pinning** — pin disclosure documents to IPFS for long-term availability beyond Fileverse's sync window
 

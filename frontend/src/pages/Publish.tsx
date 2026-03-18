@@ -10,7 +10,7 @@ import {
   type FileverseDoc,
 } from '../api/marketplace';
 import { useWallet } from '../context/WalletContext';
-import { MERKLE_ANCHOR_ADDRESS, MERKLE_ANCHOR_ABI } from '../contracts/MerkleAnchor';
+import { MERKLE_ANCHOR_ADDRESS, MERKLE_ANCHOR_ABI, MERKLE_ANCHOR_CHAIN_ID } from '../contracts/MerkleAnchor';
 import './Publish.css';
 
 interface SectionDef {
@@ -153,7 +153,44 @@ export default function Publish() {
     if (signer && merkleRoot) {
       try {
         setIsAnchoring(true);
-        const contract = new Contract(MERKLE_ANCHOR_ADDRESS, MERKLE_ANCHOR_ABI, signer);
+
+        // MerkleAnchor is on Sepolia (chain 11155111) — switch if needed
+        const provider = signer.provider;
+        if (provider) {
+          try {
+            await (window as any).ethereum.request({
+              method: 'wallet_switchEthereumChain',
+              params: [{ chainId: '0x' + MERKLE_ANCHOR_CHAIN_ID.toString(16) }],
+            });
+          } catch (switchErr: any) {
+            // If chain not added, try to add it
+            if (switchErr.code === 4902) {
+              await (window as any).ethereum.request({
+                method: 'wallet_addEthereumChain',
+                params: [{
+                  chainId: '0x' + MERKLE_ANCHOR_CHAIN_ID.toString(16),
+                  chainName: 'Sepolia Testnet',
+                  nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+                  rpcUrls: ['https://rpc.sepolia.org'],
+                  blockExplorerUrls: ['https://sepolia.etherscan.io'],
+                }],
+              });
+            } else if (switchErr.code === 4001) {
+              // User rejected chain switch
+              setIsAnchoring(false);
+              setError('Chain switch rejected — anchoring requires Sepolia network.');
+              setIsListing(false);
+              return;
+            }
+          }
+        }
+
+        // Get a fresh signer on the new chain
+        const { BrowserProvider } = await import('ethers');
+        const sepoliaProvider = new BrowserProvider((window as any).ethereum);
+        const sepoliaSigner = await sepoliaProvider.getSigner();
+
+        const contract = new Contract(MERKLE_ANCHOR_ADDRESS, MERKLE_ANCHOR_ABI, sepoliaSigner);
         // Convert hex merkle root to bytes32
         const rootBytes32 = '0x' + merkleRoot;
         const tx = await contract.anchorRoot(selectedDdocId, rootBytes32, totalLeaves);
@@ -163,8 +200,12 @@ export default function Publish() {
         await tx.wait(1);
       } catch (err: any) {
         console.error('On-chain anchor failed:', err);
-        // Don't block listing if anchor fails — just warn
-        setError(`On-chain anchor failed (listing will proceed without it): ${err.message}`);
+        if (err.code === 4001 || err.code === 'ACTION_REJECTED') {
+          // User rejected — don't block listing
+          setError('Anchoring skipped (you can anchor later).');
+        } else {
+          setError(`On-chain anchor failed (listing will proceed without it): ${err.message}`);
+        }
       } finally {
         setIsAnchoring(false);
       }
@@ -220,9 +261,9 @@ export default function Publish() {
         {!walletConnected && (
           <div className="card fade-in" style={{ marginBottom: '1.5rem', padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.75rem', borderLeft: '3px solid var(--accent-violet)' }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-violet)" strokeWidth="2">
-              <circle cx="12" cy="12" r="10"/>
-              <line x1="12" y1="8" x2="12" y2="12"/>
-              <line x1="12" y1="16" x2="12.01" y2="16"/>
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
             <span className="text-sm">Connect your wallet via the navbar to sign in with Ethereum. Your ENS name and address will be linked to your host profile.</span>
           </div>
@@ -244,7 +285,7 @@ export default function Publish() {
               <div className="publish-step-circle">
                 {step > s.num ? (
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 ) : (
                   s.num
@@ -358,7 +399,7 @@ export default function Publish() {
                     ) : (
                       <>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M13 10V3L4 14h7v7l9-11h-7z" strokeLinejoin="round"/>
+                          <path d="M13 10V3L4 14h7v7l9-11h-7z" strokeLinejoin="round" />
                         </svg>
                         Connect to Host Backend
                       </>
@@ -366,8 +407,8 @@ export default function Publish() {
                   </button>
                   <div className="publish-info-box" style={{ marginTop: '1rem' }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-violet)" strokeWidth="1.5">
-                      <circle cx="12" cy="12" r="10"/>
-                      <path d="M12 16v-4M12 8h.01" strokeLinecap="round"/>
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M12 16v-4M12 8h.01" strokeLinecap="round" />
                     </svg>
                     <span className="text-xs">
                       Make sure your DisseK host backend is running at the URL above. It connects to your Fileverse instance via MCP and runs the Merkle proof engine. Each host configures their own <code>FILEVERSE_API_URL</code> in the backend's <code>.env</code> file.
@@ -378,8 +419,8 @@ export default function Publish() {
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2">
-                      <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round"/>
-                      <circle cx="12" cy="12" r="10" strokeWidth="1.5"/>
+                      <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
+                      <circle cx="12" cy="12" r="10" strokeWidth="1.5" />
                     </svg>
                     <span className="text-sm" style={{ color: 'var(--success)' }}>Connected to host backend</span>
                   </div>
@@ -403,11 +444,11 @@ export default function Publish() {
                             <span className="line-num text-mono" style={{ minWidth: '1.5rem' }}>
                               {selectedDdocId === d.ddocId ? (
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-violet)" strokeWidth="2">
-                                  <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round"/>
+                                  <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
                                 </svg>
                               ) : (
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5">
-                                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                  <rect x="3" y="3" width="18" height="18" rx="2" />
                                 </svg>
                               )}
                             </span>
@@ -454,7 +495,7 @@ export default function Publish() {
                       >
                         Define Sections
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round"/>
+                          <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                       </button>
                     </div>
@@ -555,7 +596,7 @@ export default function Publish() {
                   {sections.length === 0 && (
                     <button className="btn btn-secondary btn-sm" onClick={addSection} id="add-section-btn">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M12 5v14M5 12h14" strokeLinecap="round"/>
+                        <path d="M12 5v14M5 12h14" strokeLinecap="round" />
                       </svg>
                       Add Section
                     </button>
@@ -626,7 +667,7 @@ export default function Publish() {
                     </div>
                     <button className="btn btn-ghost btn-icon remove-section-btn" onClick={() => removeSection(idx)} aria-label="Remove section">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                        <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round"/>
+                        <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" />
                       </svg>
                     </button>
                   </div>
@@ -635,7 +676,7 @@ export default function Publish() {
                 {sections.length > 0 && (
                   <button className="btn btn-secondary btn-sm" onClick={addSection} id="add-section-btn">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M12 5v14M5 12h14" strokeLinecap="round"/>
+                      <path d="M12 5v14M5 12h14" strokeLinecap="round" />
                     </svg>
                     Add Section
                   </button>
@@ -659,7 +700,7 @@ export default function Publish() {
                     <>
                       Build Merkle Tree
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     </>
                   )}
@@ -689,7 +730,7 @@ export default function Publish() {
                 <button
                   className={`btn btn-primary btn-lg ${isListing ? 'btn-loading' : ''}`}
                   onClick={handleListOnMarketplace}
-                  disabled={isListing}
+                  disabled={isListing || !walletConnected}
                   id="anchor-btn"
                 >
                   {isListing ? (
@@ -700,7 +741,7 @@ export default function Publish() {
                   ) : (
                     <>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M13 10V3L4 14h7v7l9-11h-7z" strokeLinejoin="round"/>
+                        <path d="M13 10V3L4 14h7v7l9-11h-7z" strokeLinejoin="round" />
                       </svg>
                       {walletConnected ? 'Anchor On-Chain & List' : 'List on Marketplace'}
                     </>
@@ -710,8 +751,8 @@ export default function Publish() {
                 <div className="anchor-success" id="anchor-success">
                   <div className="anchor-success-icon">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2">
-                      <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round"/>
-                      <circle cx="12" cy="12" r="10" strokeWidth="1.5"/>
+                      <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
+                      <circle cx="12" cy="12" r="10" strokeWidth="1.5" />
                     </svg>
                   </div>
                   <h3 className="heading-sm">Document Listed Successfully!</h3>
